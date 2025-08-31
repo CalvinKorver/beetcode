@@ -1,4 +1,6 @@
-function extractProblemInfo() {
+function extractProblemInfo(isCompleted = false) {
+  const status = isCompleted ? 'COMPLETED' : 'ATTEMPTED';
+  console.log("BeetCode: Extracting problem info with status:", status);
   const url = window.location.href;
   const problemMatch = url.match(/\/problems\/([^\/]+)/);
   
@@ -12,57 +14,82 @@ function extractProblemInfo() {
     id: problemSlug,
     name: problemTitle,
     url: url.split('?')[0],
-    completed: true,
-    completedAt: Date.now()
+    status: status,
+    lastAttempted: Date.now(),
+    completedAt: status === 'COMPLETED' ? Date.now() : null
   };
 }
 
-function detectSubmissionSuccess() {
-  const successIndicators = [
-    '[data-e2e-locator="console-result"]',
-    '.success',
-    '[class*="success"]',
-    '.text-green-s'
-  ];
+function waitForResult(maxRetries = 10, currentRetry = 0) {
+  console.log(`BeetCode: Checking for submission result (attempt ${currentRetry + 1}/${maxRetries})`);
   
-  for (const selector of successIndicators) {
-    const element = document.querySelector(selector);
-    if (element && element.textContent.toLowerCase().includes('accepted')) {
-      return true;
+  const resultSpan = document.querySelector('span[data-e2e-locator="submission-result"]');
+  
+  if (resultSpan && resultSpan.textContent?.trim()) {
+    const result = resultSpan.textContent.trim();
+    console.log('BeetCode: Found result:', result);
+    
+    if (result === 'Accepted') {
+      handleProblemSubmission(true);
+    } else {
+      handleProblemSubmission(false);
     }
+    return;
   }
   
-  return false;
+  if (currentRetry < maxRetries - 1) {
+    setTimeout(() => {
+      waitForResult(maxRetries, currentRetry + 1);
+    }, 500);
+  } else {
+    console.log('BeetCode: Max retries reached, marking as attempted');
+    handleProblemSubmission(false);
+  }
 }
 
-function handleProblemCompletion() {
-  const problemInfo = extractProblemInfo();
+function handleProblemSubmission(isCompleted) {
+  console.log('BeetCode: Handling problem submission with completed:', isCompleted);
+  const problemInfo = extractProblemInfo(isCompleted);
+  console.log('BeetCode: Problem info:', problemInfo);
   if (!problemInfo) return;
   
   chrome.runtime.sendMessage({
-    type: 'PROBLEM_COMPLETED',
+    type: 'PROBLEM_SUBMITTED',
     problem: problemInfo
+  });
+  console.log('BeetCode: Message sent to background script');
+}
+
+function attachSubmitButtonListener() {
+  const submitButtons = document.querySelectorAll('button');
+  
+  submitButtons.forEach(button => {
+    const spanElement = button.querySelector('span');
+    if (spanElement && spanElement.textContent?.trim() === 'Submit' && !button.hasAttribute('data-beetcode-listener')) {
+      button.setAttribute('data-beetcode-listener', 'true');
+      button.addEventListener('click', () => {
+        console.log('BeetCode: Submit button clicked, waiting for result...');
+        setTimeout(() => {
+          waitForResult();
+        }, 1000);
+      });
+    }
   });
 }
 
-const observer = new MutationObserver((mutations) => {
-  mutations.forEach((mutation) => {
-    if (mutation.type === 'childList' || mutation.type === 'characterData') {
-      if (detectSubmissionSuccess()) {
-        handleProblemCompletion();
-      }
-    }
-  });
+const observer = new MutationObserver(() => {
+  attachSubmitButtonListener();
 });
 
 observer.observe(document.body, {
   childList: true,
-  subtree: true,
-  characterData: true
+  subtree: true
 });
 
+console.log('BeetCode: Content script loaded');
+console.log('BeetCode: Current URL:', window.location.href);
+
 window.addEventListener('load', () => {
-  if (detectSubmissionSuccess()) {
-    handleProblemCompletion();
-  }
+  console.log('BeetCode: Page loaded, attaching listeners');
+  attachSubmitButtonListener();
 });

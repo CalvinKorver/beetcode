@@ -8,10 +8,25 @@
   <div class="container">
     <h2>BeetCode Tracker</h2>
     <div id="stats">
-      <span id="completed-count">0</span> problems completed
+      <div class="stat-row">
+        <span class="stat-label">Attempted:</span>
+        <span id="attempted-count">0</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Completed:</span>
+        <span id="completed-count">0</span>
+      </div>
     </div>
     <div id="problems-list">
-      <div id="empty-state">No problems completed yet!</div>
+      <div id="empty-state">No problems attempted yet!</div>
+      <div id="attempted-section">
+        <h3>Attempted</h3>
+        <div id="attempted-list"></div>
+      </div>
+      <div id="completed-section">
+        <h3>Completed</h3>
+        <div id="completed-list"></div>
+      </div>
     </div>
   </div>
   <script src="popup.js"></script>

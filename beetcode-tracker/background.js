@@ -1,5 +1,5 @@
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'PROBLEM_COMPLETED') {
+  if (message.type === 'PROBLEM_SUBMITTED') {
     saveProblem(message.problem);
   }
 });
