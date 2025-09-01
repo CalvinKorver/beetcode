@@ -1,3 +1,51 @@
+function convertDurationToMinutes(duration) {
+  if (!duration || typeof duration !== 'string') return 0;
+  
+  const parts = duration.split(':');
+  if (parts.length !== 3) return 0;
+  
+  const hours = parseInt(parts[0], 10) || 0;
+  const minutes = parseInt(parts[1], 10) || 0;
+  const seconds = parseInt(parts[2], 10) || 0;
+  
+  return hours * 60 + minutes + Math.round(seconds / 60);
+}
+
+function getDifficultyStyle(difficulty) {
+  switch (difficulty) {
+    case 'easy':
+      return 'background-color: #dcfce7; color: #15803d;';
+    case 'medium':
+      return 'background-color: #fef3c7; color: #d97706;';
+    case 'hard':
+      return 'background-color: #fecaca; color: #dc2626;';
+    default:
+      return 'background-color: #f3f4f6; color: #374151;';
+  }
+}
+
+function getShortestTimeDisplay(timeEntries) {
+  if (!timeEntries || timeEntries.length === 0) return '';
+  
+  const shortestEntry = timeEntries
+    .map(entry => ({
+      ...entry,
+      totalMinutes: convertDurationToMinutes(entry.duration)
+    }))
+    .sort((a, b) => a.totalMinutes - b.totalMinutes)[0];
+  
+  // Convert hh:mm:ss to mm:ss format
+  const parts = shortestEntry.duration.split(':');
+  const hours = parseInt(parts[0], 10) || 0;
+  const minutes = parseInt(parts[1], 10) || 0;
+  const seconds = parts[2] || '00';
+  
+  const totalMinutes = hours * 60 + minutes;
+  const displayTime = `${totalMinutes}:${seconds}`;
+  
+  return `Best: <strong>${displayTime}</strong> ✓`;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   await loadProblems();
 });
@@ -20,8 +68,6 @@ async function loadProblems() {
 function displayProblems(problems) {
   const problemsList = document.getElementById('problems-list');
   const emptyState = document.getElementById('empty-state');
-  const completedCount = document.getElementById('completed-count');
-  const attemptedCount = document.getElementById('attempted-count');
   
   const problemsArray = Object.values(problems);
   console.log('All problems:', problemsArray);
@@ -32,8 +78,6 @@ function displayProblems(problems) {
   console.log('Completed problems:', completedProblems);
   console.log('Attempted problems:', attemptedProblems);
   
-  completedCount.textContent = completedProblems.length;
-  attemptedCount.textContent = attemptedProblems.length;
   
   const attemptedSection = document.getElementById('attempted-section');
   const completedSection = document.getElementById('completed-section');
@@ -59,12 +103,12 @@ function displayProblems(problems) {
     .map(problem => `
       <div class="problem-item ${problem.status ? problem.status.toLowerCase() : 'unknown'}">
         <div class="problem-header">
-          <div class="problem-name">${problem.name}</div>
-        </div>
-        <div class="problem-meta">
-          <span class="problem-id">#${problem.leetcodeId || 'N/A'}</span>
-          <span class="problem-status">Attempted</span>
+          <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
           <a href="${problem.url}" target="_blank" class="problem-link">View</a>
+        </div>
+        <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="shortest-time">${getShortestTimeDisplay(problem.timeEntries) || ''}</span>
+          <img src="clock-regular-full.png" class="log-time-icon" data-problem-id="${problem.id}" style="cursor: pointer; width: 16px; height: 16px; margin-top: 4px; padding-right: 2px;" alt="Log Time">
         </div>
       </div>
     `).join('');
@@ -75,13 +119,45 @@ function displayProblems(problems) {
     .map(problem => `
       <div class="problem-item ${problem.status ? problem.status.toLowerCase() : 'unknown'}">
         <div class="problem-header">
-          <div class="problem-name">${problem.name}</div>
-          <div class="checkmark">✓</div>
-        </div>
-        <div class="problem-meta">
-          <span class="problem-id">#${problem.leetcodeId || 'N/A'}</span>
+          <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
           <a href="${problem.url}" target="_blank" class="problem-link">View</a>
+        </div>
+        <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="shortest-time">${getShortestTimeDisplay(problem.timeEntries) || ''}</span>
+          <img src="clock-regular-full.png" class="log-time-icon" data-problem-id="${problem.id}" style="cursor: pointer; width: 16px; height: 16px; margin-top: 4px; padding-right: 2px;" alt="Log Time">
         </div>
       </div>
     `).join('');
+  
+  // Add click listeners to Log Time icons
+  document.querySelectorAll('.log-time-icon').forEach(icon => {
+    icon.addEventListener('click', async (e) => {
+      const problemId = e.target.getAttribute('data-problem-id');
+      console.log('Log Time clicked for problem:', problemId);
+      
+      // Send message to content script to extract duration
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.url && tab.url.includes('leetcode.com')) {
+          chrome.tabs.sendMessage(tab.id, { 
+            type: 'EXTRACT_DURATION',
+            problemId: problemId 
+          }, (response) => {
+            if (response && response.success) {
+              console.log('Duration logged successfully:', response.duration);
+              // Reload problems to show updated display
+              loadProblems();
+            } else {
+              console.error('Failed to log duration:', response?.error);
+            }
+          });
+        } else {
+          console.error('Not on a LeetCode page');
+          alert('Please navigate to the LeetCode problem page first');
+        }
+      } catch (error) {
+        console.error('Error sending message to content script:', error);
+      }
+    });
+  });
 }

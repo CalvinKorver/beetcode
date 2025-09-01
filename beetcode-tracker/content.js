@@ -7,30 +7,36 @@ function extractProblemInfo(isCompleted = false) {
   if (!problemMatch) return null;
   
   const problemSlug = problemMatch[1];
-  const titleElement = document.querySelector('div.text-title-large.font-semibold a[href*="/problems/"]');
+  const titleElement = document.querySelector('#qd-content a[href*="/problems/"]:not([href*="/discuss/"])');
   console.log('BeetCode: Title element found:', titleElement);
-  console.log('BeetCode: Raw title text:', titleElement?.textContent);
-  console.log('BeetCode: Trimmed title text:', titleElement?.textContent?.trim());
   const rawTitle = titleElement?.textContent?.trim() || problemSlug;
-  console.log('BeetCode: Raw problem title:', rawTitle);
-  console.log('BeetCode: Problem slug fallback:', problemSlug);
   
   // Extract leetcode ID and clean title
   const leetcodeIdMatch = rawTitle.match(/^(\d+)\.\s*/);
   const leetcodeId = leetcodeIdMatch ? leetcodeIdMatch[1] : null;
   const problemTitle = leetcodeId ? rawTitle.replace(/^\d+\.\s*/, '') : rawTitle;
   
-  console.log('BeetCode: Extracted leetcodeId:', leetcodeId);
-  console.log('BeetCode: Cleaned problem title:', problemTitle);
+  // Extract difficulty
+  const difficultyElement = document.querySelector('div[class*="text-difficulty-"]');
+  let difficulty = null;
+  if (difficultyElement) {
+    const difficultyText = difficultyElement.textContent?.trim().toLowerCase();
+    if (['easy', 'medium', 'hard'].includes(difficultyText)) {
+      difficulty = difficultyText;
+    }
+  }
+  console.log('BeetCode: Difficulty found:', difficulty);
   
   return {
     id: problemSlug,
     leetcodeId: leetcodeId,
     name: problemTitle,
+    difficulty: difficulty,
     url: url.split('?')[0],
     status: status,
     lastAttempted: Date.now(),
-    completedAt: status === 'COMPLETED' ? Date.now() : null
+    completedAt: status === 'COMPLETED' ? Date.now() : null,
+    timeEntries: []
   };
 }
 
@@ -91,8 +97,21 @@ function attachSubmitButtonListener() {
   });
 }
 
+function attachRunButtonListener() {
+  const runButton = document.querySelector('button[data-e2e-locator="console-run-button"]');
+  
+  if (runButton && !runButton.hasAttribute('data-beetcode-listener')) {
+    runButton.setAttribute('data-beetcode-listener', 'true');
+    runButton.addEventListener('click', () => {
+      console.log('BeetCode: Run button Eclicked, marking as attempted...');
+      handleProblemSubmission(false);
+    });
+  }
+}
+
 const observer = new MutationObserver(() => {
   attachSubmitButtonListener();
+  attachRunButtonListener();
 });
 
 observer.observe(document.body, {
@@ -103,7 +122,52 @@ observer.observe(document.body, {
 console.log('BeetCode: Content script loaded');
 console.log('BeetCode: Current URL:', window.location.href);
 
+// Listen for messages from popup
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'EXTRACT_DURATION') {
+    console.log('BeetCode: Extract duration requested for problem:', message.problemId);
+    
+    // Look for the nav element and duration
+    const navElement = document.querySelector('#__next > div.flex.min-w-\\[360px\\].flex-col.text-label-1.dark\\:text-dark-label-1.overflow-x-auto.bg-sd-background-gray.h-\\[100vh\\] > div > div > div.relative > nav');
+    console.log('BeetCode: Nav element found:', navElement);
+    
+    if (navElement) {
+      const durationElement = navElement.querySelector('div.select-none.text-sm.text-sd-blue-400');
+      console.log('BeetCode: Duration element found:', durationElement);
+      
+      if (durationElement) {
+        const duration = durationElement.textContent.trim();
+        console.log('BeetCode: Extracted duration:', duration);
+        
+        // Send the duration back to background script to store
+        chrome.runtime.sendMessage({
+          type: 'LOG_TIME_ENTRY',
+          problemId: message.problemId,
+          duration: duration,
+          timestamp: Date.now()
+        }, (response) => {
+          // Wait for background script confirmation before responding
+          if (response && response.success) {
+            sendResponse({ success: true, duration: duration });
+          } else {
+            sendResponse({ success: false, error: 'Failed to save time entry' });
+          }
+        });
+      } else {
+        console.log('BeetCode: Duration element not found');
+        sendResponse({ success: false, error: 'Duration element not found' });
+      }
+    } else {
+      console.log('BeetCode: Nav element not found');
+      sendResponse({ success: false, error: 'Nav element not found' });
+    }
+    
+    return true; // Keep the message channel open for async response
+  }
+});
+
 window.addEventListener('load', () => {
   console.log('BeetCode: Page loaded, attaching listeners');
   attachSubmitButtonListener();
+  attachRunButtonListener();
 });
