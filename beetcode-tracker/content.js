@@ -40,7 +40,7 @@ function extractProblemInfo(isCompleted = false) {
   };
 }
 
-function waitForResult(maxRetries = 10, currentRetry = 0) {
+async function waitForResult(maxRetries = 10, currentRetry = 0) {
   console.log(`BeetCode: Checking for submission result (attempt ${currentRetry + 1}/${maxRetries})`);
   
   const resultSpan = document.querySelector('span[data-e2e-locator="submission-result"]');
@@ -50,34 +50,68 @@ function waitForResult(maxRetries = 10, currentRetry = 0) {
     console.log('BeetCode: Found result:', result);
     
     if (result === 'Accepted') {
-      handleProblemSubmission(true);
+      await handleProblemSubmission(true);
     } else {
-      handleProblemSubmission(false);
+      await handleProblemSubmission(false);
     }
     return;
   }
   
   if (currentRetry < maxRetries - 1) {
-    setTimeout(() => {
-      waitForResult(maxRetries, currentRetry + 1);
+    setTimeout(async () => {
+      await waitForResult(maxRetries, currentRetry + 1);
     }, 500);
   } else {
     console.log('BeetCode: Max retries reached, marking as attempted');
-    handleProblemSubmission(false);
+    await handleProblemSubmission(false);
   }
 }
 
-function handleProblemSubmission(isCompleted) {
+async function handleProblemSubmission(isCompleted) {
   console.log('BeetCode: Handling problem submission with completed:', isCompleted);
   const problemInfo = extractProblemInfo(isCompleted);
   console.log('BeetCode: Problem info:', problemInfo);
   if (!problemInfo) return;
   
-  chrome.runtime.sendMessage({
-    type: 'PROBLEM_SUBMITTED',
-    problem: problemInfo
-  });
-  console.log('BeetCode: Message sent to background script');
+  // First check if problem already exists
+  try {
+    const response = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        type: 'GET_PROBLEM_BY_URL',
+        url: problemInfo.url
+      }, resolve);
+    });
+    
+    if (response && response.success && response.problem) {
+      console.log('BeetCode: Problem already exists, updating:', response.problem);
+      // Problem exists - update it with new attempt data
+      const updatedProblem = {
+        ...response.problem,
+        ...problemInfo,
+        lastAttempted: Date.now()
+      };
+      
+      chrome.runtime.sendMessage({
+        type: 'PROBLEM_SUBMITTED',
+        problem: updatedProblem
+      });
+    } else {
+      console.log('BeetCode: New problem, creating entry');
+      chrome.runtime.sendMessage({
+        type: 'PROBLEM_SUBMITTED',
+        problem: problemInfo
+      });
+    }
+    
+    console.log('BeetCode: Message sent to background script');
+  } catch (error) {
+    console.error('BeetCode: Error checking for existing problem:', error);
+    // Fallback to original behavior
+    chrome.runtime.sendMessage({
+      type: 'PROBLEM_SUBMITTED',
+      problem: problemInfo
+    });
+  }
 }
 
 function attachSubmitButtonListener() {
@@ -102,9 +136,9 @@ function attachRunButtonListener() {
   
   if (runButton && !runButton.hasAttribute('data-beetcode-listener')) {
     runButton.setAttribute('data-beetcode-listener', 'true');
-    runButton.addEventListener('click', () => {
-      console.log('BeetCode: Run button Eclicked, marking as attempted...');
-      handleProblemSubmission(false);
+    runButton.addEventListener('click', async () => {
+      console.log('BeetCode: Run button clicked, marking as attempted...');
+      await handleProblemSubmission(false);
     });
   }
 }
@@ -123,7 +157,7 @@ console.log('BeetCode: Content script loaded');
 console.log('BeetCode: Current URL:', window.location.href);
 
 // Listen for messages from popup
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === 'EXTRACT_DURATION') {
     console.log('BeetCode: Extract duration requested for problem:', message.problemId);
     
