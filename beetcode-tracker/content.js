@@ -7,11 +7,25 @@ function extractProblemInfo(isCompleted = false) {
   if (!problemMatch) return null;
   
   const problemSlug = problemMatch[1];
-  const titleElement = document.querySelector('h1[data-cy="question-title"], .css-v3d350');
-  const problemTitle = titleElement?.textContent?.trim() || problemSlug;
+  const titleElement = document.querySelector('div.text-title-large.font-semibold a[href*="/problems/"]');
+  console.log('BeetCode: Title element found:', titleElement);
+  console.log('BeetCode: Raw title text:', titleElement?.textContent);
+  console.log('BeetCode: Trimmed title text:', titleElement?.textContent?.trim());
+  const rawTitle = titleElement?.textContent?.trim() || problemSlug;
+  console.log('BeetCode: Raw problem title:', rawTitle);
+  console.log('BeetCode: Problem slug fallback:', problemSlug);
+  
+  // Extract leetcode ID and clean title
+  const leetcodeIdMatch = rawTitle.match(/^(\d+)\.\s*/);
+  const leetcodeId = leetcodeIdMatch ? leetcodeIdMatch[1] : null;
+  const problemTitle = leetcodeId ? rawTitle.replace(/^\d+\.\s*/, '') : rawTitle;
+  
+  console.log('BeetCode: Extracted leetcodeId:', leetcodeId);
+  console.log('BeetCode: Cleaned problem title:', problemTitle);
   
   return {
     id: problemSlug,
+    leetcodeId: leetcodeId,
     name: problemTitle,
     url: url.split('?')[0],
     status: status,

@@ -62,7 +62,7 @@ function displayProblems(problems) {
           <div class="problem-name">${problem.name}</div>
         </div>
         <div class="problem-meta">
-          <span class="problem-id">#${problem.id}</span>
+          <span class="problem-id">#${problem.leetcodeId || 'N/A'}</span>
           <span class="problem-status">Attempted</span>
           <a href="${problem.url}" target="_blank" class="problem-link">View</a>
         </div>
@@ -79,8 +79,7 @@ function displayProblems(problems) {
           <div class="checkmark">✓</div>
         </div>
         <div class="problem-meta">
-          <span class="problem-id">#${problem.id}</span>
-          <span class="problem-status">Completed</span>
+          <span class="problem-id">#${problem.leetcodeId || 'N/A'}</span>
           <a href="${problem.url}" target="_blank" class="problem-link">View</a>
         </div>
       </div>
