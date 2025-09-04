@@ -6,9 +6,17 @@
 </head>
 <body>
   <div class="container">
+    <div class="settings-icon" id="settings-btn">
+      <img src="settings.png" alt="Settings">
+    </div>
     <h2><img src="beetcode-hifed.png" style="height: 24px; vertical-align: middle; margin-right: 8px; padding-bottom: 4px" alt="BeetCode">BeetCode</h2>
+    <button id="track-problem-btn" class="track-button">Track Problem</button>
     <div id="problems-list">
       <div id="empty-state">No problems attempted yet!</div>
+      <div id="in-progress-section">
+        <h3>In-Progress</h3>
+        <div id="in-progress-list"></div>
+      </div>
       <div id="attempted-section">
         <h3>Attempted</h3>
         <div id="attempted-list"></div>
@@ -17,6 +25,9 @@
         <h3>Completed</h3>
         <div id="completed-list"></div>
       </div>
+    </div>
+    <div class="settings-dropdown" id="settings-dropdown">
+      <div class="dropdown-item" id="export-csv-btn">Export CSV</div>
     </div>
   </div>
   <script src="popup.js"></script>

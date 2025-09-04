@@ -48,6 +48,69 @@ function getShortestTimeDisplay(timeEntries) {
 
 document.addEventListener('DOMContentLoaded', async () => {
   await loadProblems();
+  
+  // Add settings dropdown toggle listener
+  const settingsBtn = document.getElementById('settings-btn');
+  const settingsDropdown = document.getElementById('settings-dropdown');
+  
+  settingsBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    settingsDropdown.classList.toggle('show');
+  });
+  
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!settingsBtn.contains(e.target) && !settingsDropdown.contains(e.target)) {
+      settingsDropdown.classList.remove('show');
+    }
+  });
+  
+  // Add CSV export listener
+  const exportCsvBtn = document.getElementById('export-csv-btn');
+  exportCsvBtn.addEventListener('click', async () => {
+    await exportToCSV();
+    settingsDropdown.classList.remove('show');
+  });
+  
+  // Add event listener for remove buttons (using event delegation)
+  document.addEventListener('click', async (e) => {
+    if (e.target.classList.contains('remove-button')) {
+      const problemId = e.target.getAttribute('data-problem-id');
+      if (problemId) {
+        await removeProblem(problemId);
+      }
+    }
+  });
+  
+  // Add Track Problem button listener
+  const trackButton = document.getElementById('track-problem-btn');
+  trackButton.addEventListener('click', async () => {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab && tab.url && tab.url.includes('leetcode.com')) {
+        chrome.tabs.sendMessage(tab.id, { 
+          type: 'TRACK_PROBLEM'
+        }, (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('Runtime error:', chrome.runtime.lastError);
+            alert('Error: ' + chrome.runtime.lastError.message);
+          } else if (response && response.success) {
+            console.log('Problem tracking started successfully');
+            // Reload problems to show updated display
+            loadProblems();
+          } else {
+            console.error('Failed to start tracking:', response?.error);
+            alert('Failed to start tracking: ' + (response?.error || 'Unknown error'));
+          }
+        });
+      } else {
+        console.error('Not on a LeetCode page');
+        alert('Please navigate to the LeetCode problem page first');
+      }
+    } catch (error) {
+      console.error('Error sending track message to content script:', error);
+    }
+  });
 });
 
 async function loadProblems() {
@@ -72,20 +135,24 @@ function displayProblems(problems) {
   const problemsArray = Object.values(problems);
   console.log('All problems:', problemsArray);
   
-  const completedProblems = problemsArray.filter(p => p && (p.status === 'COMPLETED' || p.completed === true));
-  const attemptedProblems = problemsArray.filter(p => p && p.status !== 'COMPLETED' && p.completed !== true);
+  const inProgressProblems = problemsArray.filter(p => p && p.status === 'TRACKING');
+  const completedProblems = problemsArray.filter(p => p && p.status === 'COMPLETED');
+  const attemptedProblems = problemsArray.filter(p => p && p.status === 'ATTEMPTED');
   
+  console.log('In-progress problems:', inProgressProblems);
   console.log('Completed problems:', completedProblems);
   console.log('Attempted problems:', attemptedProblems);
   
-  
+  const inProgressSection = document.getElementById('in-progress-section');
   const attemptedSection = document.getElementById('attempted-section');
   const completedSection = document.getElementById('completed-section');
+  const inProgressList = document.getElementById('in-progress-list');
   const attemptedList = document.getElementById('attempted-list');
   const completedList = document.getElementById('completed-list');
   
   if (problemsArray.length === 0) {
     emptyState.style.display = 'block';
+    inProgressSection.style.display = 'none';
     attemptedSection.style.display = 'none';
     completedSection.style.display = 'none';
     return;
@@ -94,8 +161,25 @@ function displayProblems(problems) {
   emptyState.style.display = 'none';
   
   // Show/hide sections based on content
+  inProgressSection.style.display = inProgressProblems.length > 0 ? 'block' : 'none';
   attemptedSection.style.display = attemptedProblems.length > 0 ? 'block' : 'none';
   completedSection.style.display = completedProblems.length > 0 ? 'block' : 'none';
+  
+  // Populate in-progress problems
+  inProgressList.innerHTML = inProgressProblems
+    .sort((a, b) => b.lastAttempted - a.lastAttempted)
+    .map(problem => `
+      <div class="problem-item tracking">
+        <div class="problem-header">
+          <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
+          <a href="${problem.url}" target="_blank" class="problem-link">View</a>
+        </div>
+        <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="attempts-count">${problem.timeEntries ? problem.timeEntries.length : 0} attempts</span>
+          <span class="shortest-time">${getShortestTimeDisplay(problem.timeEntries) || ''}</span>
+        </div>
+      </div>
+    `).join('');
   
   // Populate attempted problems
   attemptedList.innerHTML = attemptedProblems
@@ -107,8 +191,8 @@ function displayProblems(problems) {
           <a href="${problem.url}" target="_blank" class="problem-link">View</a>
         </div>
         <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="attempts-count">${problem.timeEntries ? problem.timeEntries.length : 0} attempts</span>
           <span class="shortest-time">${getShortestTimeDisplay(problem.timeEntries) || ''}</span>
-          <img src="clock-regular-full.png" class="log-time-icon" data-problem-id="${problem.id}" style="cursor: pointer; width: 16px; height: 16px; margin-top: 4px; padding-right: 2px;" alt="Log Time">
         </div>
       </div>
     `).join('');
@@ -120,44 +204,180 @@ function displayProblems(problems) {
       <div class="problem-item ${problem.status ? problem.status.toLowerCase() : 'unknown'}">
         <div class="problem-header">
           <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
-          <a href="${problem.url}" target="_blank" class="problem-link">View</a>
+          <div class="problem-actions">
+            <a href="${problem.url}" target="_blank" class="problem-link">View</a>
+            <button class="remove-button" data-problem-id="${problem.id}" title="Remove problem">×</button>
+          </div>
         </div>
         <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
+          <span class="attempts-count">${problem.timeEntries ? problem.timeEntries.length : 0} attempts</span>
           <span class="shortest-time">${getShortestTimeDisplay(problem.timeEntries) || ''}</span>
-          <img src="clock-regular-full.png" class="log-time-icon" data-problem-id="${problem.id}" style="cursor: pointer; width: 16px; height: 16px; margin-top: 4px; padding-right: 2px;" alt="Log Time">
         </div>
       </div>
     `).join('');
-  
-  // Add click listeners to Log Time icons
-  document.querySelectorAll('.log-time-icon').forEach(icon => {
-    icon.addEventListener('click', async (e) => {
-      const problemId = e.target.getAttribute('data-problem-id');
-      console.log('Log Time clicked for problem:', problemId);
+}
+
+async function exportToCSV() {
+  try {
+    const result = await chrome.storage.local.get(['problems']);
+    const problems = result.problems || {};
+    const problemsArray = Object.values(problems);
+    
+    if (problemsArray.length === 0) {
+      alert('No problems to export!');
+      return;
+    }
+    
+    // CSV headers
+    const headers = [
+      'Problem Name',
+      'Difficulty',
+      'Status',
+      'Total Attempts',
+      'Best Time (mm:ss)',
+      'Average Time (mm:ss)',
+      'First Attempted',
+      'Last Attempted',
+      'Completed Date',
+      'URL'
+    ];
+    
+    // Convert problems to CSV rows
+    const csvRows = [headers.join(',')];
+    
+    problemsArray.forEach(problem => {
+      const timeEntries = problem.timeEntries || [];
+      const totalAttempts = timeEntries.length;
       
-      // Send message to content script to extract duration
-      try {
-        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        if (tab && tab.url && tab.url.includes('leetcode.com')) {
-          chrome.tabs.sendMessage(tab.id, { 
-            type: 'EXTRACT_DURATION',
-            problemId: problemId 
-          }, (response) => {
-            if (response && response.success) {
-              console.log('Duration logged successfully:', response.duration);
-              // Reload problems to show updated display
-              loadProblems();
-            } else {
-              console.error('Failed to log duration:', response?.error);
-            }
-          });
-        } else {
-          console.error('Not on a LeetCode page');
-          alert('Please navigate to the LeetCode problem page first');
-        }
-      } catch (error) {
-        console.error('Error sending message to content script:', error);
+      // Calculate best time
+      let bestTime = '';
+      let averageTime = '';
+      
+      if (timeEntries.length > 0) {
+        const times = timeEntries.map(entry => convertDurationToMinutes(entry.duration));
+        const bestMinutes = Math.min(...times);
+        const averageMinutes = Math.round(times.reduce((sum, time) => sum + time, 0) / times.length);
+        
+        bestTime = formatMinutesToDisplay(bestMinutes);
+        averageTime = formatMinutesToDisplay(averageMinutes);
       }
+      
+      // Format dates
+      const firstAttempted = timeEntries.length > 0 
+        ? new Date(Math.min(...timeEntries.map(e => e.timestamp))).toLocaleDateString()
+        : '';
+      
+      const lastAttempted = problem.lastAttempted 
+        ? new Date(problem.lastAttempted).toLocaleDateString()
+        : '';
+      
+      const completedDate = problem.completedAt 
+        ? new Date(problem.completedAt).toLocaleDateString()
+        : '';
+      
+      const row = [
+        escapeCSVField(problem.name || ''),
+        escapeCSVField(problem.difficulty || ''),
+        escapeCSVField(problem.status || ''),
+        totalAttempts,
+        bestTime,
+        averageTime,
+        firstAttempted,
+        lastAttempted,
+        completedDate,
+        escapeCSVField(problem.url || '')
+      ];
+      
+      csvRows.push(row.join(','));
     });
-  });
+    
+    // Create and download the CSV file
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    
+    if (link.download !== undefined) {
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      
+      // Generate filename with current date
+      const now = new Date();
+      const dateString = now.toISOString().split('T')[0]; // YYYY-MM-DD format
+      link.setAttribute('download', `beetcode-export-${dateString}.csv`);
+      
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      console.log('CSV export completed successfully');
+    }
+  } catch (error) {
+    console.error('Error exporting CSV:', error);
+    alert('Error exporting CSV: ' + error.message);
+  }
+}
+
+function formatMinutesToDisplay(totalMinutes) {
+  if (totalMinutes === 0) return '0:00';
+  const minutes = Math.floor(totalMinutes);
+  const seconds = Math.round((totalMinutes - minutes) * 60);
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function escapeCSVField(field) {
+  if (typeof field !== 'string') {
+    field = String(field);
+  }
+  
+  // If field contains comma, newline, or quote, wrap in quotes and escape quotes
+  if (field.includes(',') || field.includes('\n') || field.includes('\r') || field.includes('"')) {
+    return '"' + field.replace(/"/g, '""') + '"';
+  }
+  
+  return field;
+}
+
+async function removeProblem(problemId) {
+  try {
+    // Show confirmation dialog
+    const problemName = await getProblemName(problemId);
+    const confirmMessage = problemName 
+      ? `Are you sure you want to remove "${problemName}" from your completed list?`
+      : `Are you sure you want to remove this problem from your completed list?`;
+    
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+    
+    // Remove from storage
+    const result = await chrome.storage.local.get(['problems']);
+    const problems = result.problems || {};
+    
+    if (problems[problemId]) {
+      delete problems[problemId];
+      await chrome.storage.local.set({ problems });
+      
+      // Reload problems to update display
+      await loadProblems();
+      
+      console.log('BeetCode: Problem removed successfully:', problemId);
+    } else {
+      console.warn('BeetCode: Problem not found for removal:', problemId);
+    }
+  } catch (error) {
+    console.error('BeetCode: Error removing problem:', error);
+    alert('Failed to remove problem. Please try again.');
+  }
+}
+
+async function getProblemName(problemId) {
+  try {
+    const result = await chrome.storage.local.get(['problems']);
+    const problems = result.problems || {};
+    return problems[problemId]?.name || null;
+  } catch (error) {
+    console.error('BeetCode: Error getting problem name:', error);
+    return null;
+  }
 }
