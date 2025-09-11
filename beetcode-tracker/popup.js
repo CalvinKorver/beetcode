@@ -128,6 +128,10 @@ async function loadProblems() {
   }
 }
 
+function getActiveProblems(problemsArray, status) {
+  return problemsArray.filter(p => p && p.status === status && !p.isDeleted);
+}
+
 function displayProblems(problems) {
   const problemsList = document.getElementById('problems-list');
   const emptyState = document.getElementById('empty-state');
@@ -135,9 +139,9 @@ function displayProblems(problems) {
   const problemsArray = Object.values(problems);
   console.log('All problems:', problemsArray);
   
-  const inProgressProblems = problemsArray.filter(p => p && p.status === 'TRACKING');
-  const completedProblems = problemsArray.filter(p => p && p.status === 'COMPLETED');
-  const attemptedProblems = problemsArray.filter(p => p && p.status === 'ATTEMPTED');
+  const inProgressProblems = getActiveProblems(problemsArray, 'TRACKING');
+  const completedProblems = getActiveProblems(problemsArray, 'COMPLETED');
+  const attemptedProblems = getActiveProblems(problemsArray, 'ATTEMPTED');
   
   console.log('In-progress problems:', inProgressProblems);
   console.log('Completed problems:', completedProblems);
@@ -172,7 +176,10 @@ function displayProblems(problems) {
       <div class="problem-item tracking">
         <div class="problem-header">
           <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
-          <a href="${problem.url}" target="_blank" class="problem-link">View</a>
+          <div class="problem-actions">
+            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><img src="icons/beetcode-32.png" style="height: 16px;" alt="View problem"></a>
+            <button class="remove-button" data-problem-id="${problem.id}" title="Stop tracking problem">×</button>
+          </div>
         </div>
         <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
           <span class="attempts-count">${problem.timeEntries ? problem.timeEntries.length : 0} attempts</span>
@@ -188,7 +195,10 @@ function displayProblems(problems) {
       <div class="problem-item ${problem.status ? problem.status.toLowerCase() : 'unknown'}">
         <div class="problem-header">
           <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
-          <a href="${problem.url}" target="_blank" class="problem-link">View</a>
+          <div class="problem-actions">
+            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><img src="icons/beetcode-32.png" style="height: 16px;" alt="View problem"></a>
+            <button class="remove-button" data-problem-id="${problem.id}" title="Remove problem">×</button>
+          </div>
         </div>
         <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
           <span class="attempts-count">${problem.timeEntries ? problem.timeEntries.length : 0} attempts</span>
@@ -205,7 +215,7 @@ function displayProblems(problems) {
         <div class="problem-header">
           <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
           <div class="problem-actions">
-            <a href="${problem.url}" target="_blank" class="problem-link">View</a>
+            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><img src="icons/beetcode-32.png" style="height: 16px;" alt="View problem"></a>
             <button class="remove-button" data-problem-id="${problem.id}" title="Remove problem">×</button>
           </div>
         </div>
@@ -221,7 +231,7 @@ async function exportToCSV() {
   try {
     const result = await chrome.storage.local.get(['problems']);
     const problems = result.problems || {};
-    const problemsArray = Object.values(problems);
+    const problemsArray = Object.values(problems).filter(p => !p.isDeleted);
     
     if (problemsArray.length === 0) {
       alert('No problems to export!');
@@ -343,19 +353,19 @@ async function removeProblem(problemId) {
     // Show confirmation dialog
     const problemName = await getProblemName(problemId);
     const confirmMessage = problemName 
-      ? `Are you sure you want to remove "${problemName}" from your completed list?`
-      : `Are you sure you want to remove this problem from your completed list?`;
+      ? `Are you sure you want to remove "${problemName}" from your tracking list?`
+      : `Are you sure you want to remove this problem from your tracking list?`;
     
     if (!confirm(confirmMessage)) {
       return;
     }
     
-    // Remove from storage
+    // Use lazy deletion (soft delete)
     const result = await chrome.storage.local.get(['problems']);
     const problems = result.problems || {};
     
     if (problems[problemId]) {
-      delete problems[problemId];
+      problems[problemId].isDeleted = true;
       await chrome.storage.local.set({ problems });
       
       // Reload problems to update display

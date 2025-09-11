@@ -95,7 +95,7 @@ async function startTracking(problem) {
     const result = await chrome.storage.local.get(['problems']);
     const problems = result.problems || {};
     
-    // Clear any existing tracking problems
+    // Move any currently tracking problems to attempted
     Object.keys(problems).forEach(key => {
       if (problems[key].status === 'TRACKING') {
         problems[key].status = 'ATTEMPTED';
@@ -120,7 +120,10 @@ async function startTracking(problem) {
         lastAttempted: problem.lastAttempted,
         url: problem.url, // Always use the normalized URL
         // Preserve existing timeEntries
-        timeEntries: existingProblem.timeEntries || []
+        timeEntries: existingProblem.timeEntries || [],
+
+        // If it was deleted, un-delete it
+        isDeleted: false
       };
       
       problems[problem.id] = mergedProblem;
