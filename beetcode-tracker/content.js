@@ -99,16 +99,53 @@ function extractProblemInfo(status = 'TRACKING') {
   };
 }
 
-async function waitForResult(maxRetries = 10, currentRetry = 0) {
+async function waitForResult(maxRetries = 20, currentRetry = 0) {
   console.log(`BeetCode: Checking for submission result (attempt ${currentRetry + 1}/${maxRetries})`);
   
-  const resultSpan = document.querySelector('span[data-e2e-locator="submission-result"]');
+  // Try multiple selectors to find the result
+  const resultSelectors = [
+    'span[data-e2e-locator="submission-result"]',
+    '[data-e2e-locator="submission-result"]',
+    '.text-green-s', // Success result styling
+    '.text-red-s',   // Error result styling  
+    '[class*="text-green"]', // Generic green text (success)
+    '[class*="text-red"]',   // Generic red text (error)
+    'div[data-track-load="description_content"] span', // Result in description area
+    '.text-lg.font-medium' // Large result text
+  ];
   
-  if (resultSpan && resultSpan.textContent?.trim()) {
-    const result = resultSpan.textContent.trim();
-    console.log('BeetCode: Found result:', result);
+  let result = null;
+  let resultElement = null;
+  
+  for (const selector of resultSelectors) {
+    const elements = document.querySelectorAll(selector);
+    console.log(`BeetCode: Checking selector "${selector}", found ${elements.length} elements`);
     
-    const isAccepted = result === 'Accepted';
+    for (const element of elements) {
+      const text = element.textContent?.trim();
+      console.log(`BeetCode: Element text: "${text}"`);
+      
+      if (text && (
+        text.includes('Accepted') || 
+        text.includes('Wrong Answer') ||
+        text.includes('Time Limit Exceeded') ||
+        text.includes('Runtime Error') ||
+        text.includes('Compilation Error') ||
+        text.includes('Memory Limit Exceeded') ||
+        text.includes('Output Limit Exceeded')
+      )) {
+        result = text;
+        resultElement = element;
+        console.log('BeetCode: Found result with selector:', selector, '-> Result:', result);
+        break;
+      }
+    }
+    if (result) break;
+  }
+  
+  if (result) {
+    console.log('BeetCode: Final result found:', result);
+    const isAccepted = result.includes('Accepted');
     await handleProblemSubmission(isAccepted);
     return;
   }
@@ -116,9 +153,9 @@ async function waitForResult(maxRetries = 10, currentRetry = 0) {
   if (currentRetry < maxRetries - 1) {
     setTimeout(async () => {
       await waitForResult(maxRetries, currentRetry + 1);
-    }, 500);
+    }, 1000); // Increased wait time to 1 second
   } else {
-    console.log('BeetCode: Max retries reached, recording attempt');
+    console.log('BeetCode: Max retries reached, recording attempt as failed');
     await handleProblemSubmission(false);
   }
 }
@@ -149,9 +186,17 @@ async function handleProblemSubmission(isCompleted) {
     duration: duration,
     isCompleted: isCompleted,
     timestamp: Date.now()
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('BeetCode: Runtime error in PROBLEM_SUBMISSION:', chrome.runtime.lastError);
+    } else if (response && response.success) {
+      console.log('BeetCode: Submission successfully recorded in background');
+    } else {
+      console.error('BeetCode: Failed to record submission:', response?.error || 'Unknown error');
+    }
   });
   
-  console.log('BeetCode: Submission recorded with duration:', duration, 'completed:', isCompleted);
+  console.log('BeetCode: Submission sent with duration:', duration, 'completed:', isCompleted);
 }
 
 function extractDurationFromPage() {
@@ -170,14 +215,31 @@ function extractDurationFromPage() {
 }
 
 function attachSubmitButtonListener() {
+  // More comprehensive button search - look for multiple possible submit button patterns
   const submitButtons = document.querySelectorAll('button');
   
-  submitButtons.forEach(button => {
+  console.log('BeetCode: Found', submitButtons.length, 'buttons on page');
+  
+  submitButtons.forEach((button, index) => {
+    const buttonText = button.textContent?.trim().toLowerCase();
     const spanElement = button.querySelector('span');
-    if (spanElement && spanElement.textContent?.trim() === 'Submit' && !button.hasAttribute('data-beetcode-listener')) {
+    const spanText = spanElement?.textContent?.trim().toLowerCase();
+    
+    console.log(`BeetCode: Button ${index}: "${buttonText}" | Span: "${spanText}"`);
+    
+    // Check multiple patterns for submit buttons
+    const isSubmitButton = 
+      buttonText === 'submit' ||
+      spanText === 'submit' ||
+      buttonText.includes('submit') ||
+      spanText.includes('submit');
+    
+    if (isSubmitButton && !button.hasAttribute('data-beetcode-listener')) {
+      console.log('BeetCode: Attaching listener to submit button:', buttonText || spanText);
       button.setAttribute('data-beetcode-listener', 'true');
+      
       button.addEventListener('click', async () => {
-        console.log('BeetCode: Submit button clicked, checking if problem is being tracked...');
+        console.log('BeetCode: Submit button clicked!', buttonText || spanText);
         
         // Check if there's a problem being tracked for this URL
         const url = getBaseProblemUrl(window.location.href);
@@ -188,22 +250,33 @@ function attachSubmitButtonListener() {
           return;
         }
         
-        const response = await new Promise((resolve) => {
-          chrome.runtime.sendMessage({
-            type: 'CHECK_TRACKING_STATUS',
-            url: url
-          }, resolve);
-        });
-        
-        console.log('BeetCode: Tracking status response:', response);
-        
-        if (response && response.isTracking) {
-          console.log('BeetCode: Problem is being tracked, waiting for result...');
-          setTimeout(() => {
-            waitForResult();
-          }, 1000);
-        } else {
-          console.log('BeetCode: Problem not being tracked, ignoring submission');
+        try {
+          const response = await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({
+              type: 'CHECK_TRACKING_STATUS',
+              url: url
+            }, (response) => {
+              if (chrome.runtime.lastError) {
+                console.error('BeetCode: Runtime error in CHECK_TRACKING_STATUS:', chrome.runtime.lastError);
+                reject(chrome.runtime.lastError);
+              } else {
+                resolve(response);
+              }
+            });
+          });
+          
+          console.log('BeetCode: Tracking status response:', response);
+          
+          if (response && response.isTracking) {
+            console.log('BeetCode: Problem is being tracked, waiting for result...');
+            setTimeout(() => {
+              waitForResult();
+            }, 1000);
+          } else {
+            console.log('BeetCode: Problem not being tracked, ignoring submission');
+          }
+        } catch (error) {
+          console.error('BeetCode: Error checking tracking status:', error);
         }
       });
     }
@@ -288,8 +361,34 @@ function checkAndUpdateProblemInfo() {
   }
 }
 
+// Debug function to help understand page state
+function debugPageState() {
+  console.log('=== BeetCode Debug Info ===');
+  console.log('Current URL:', window.location.href);
+  console.log('Normalized URL:', getBaseProblemUrl(window.location.href));
+  
+  const buttons = document.querySelectorAll('button');
+  console.log('Found', buttons.length, 'buttons:');
+  buttons.forEach((button, i) => {
+    if (i < 10) { // Only show first 10 to avoid spam
+      const text = button.textContent?.trim();
+      const spanText = button.querySelector('span')?.textContent?.trim();
+      console.log(`  Button ${i}: "${text}" | Span: "${spanText}"`);
+    }
+  });
+  
+  // Check if extension is properly loaded
+  console.log('Chrome runtime available:', !!chrome.runtime);
+  console.log('Extension ID:', chrome.runtime?.id);
+  console.log('========================');
+}
+
+// Make debug function available globally
+window.beetcodeDebug = debugPageState;
+
 window.addEventListener('load', () => {
   console.log('BeetCode: Page loaded, attaching listeners');
+  debugPageState();
   attachSubmitButtonListener();
   
   // Check if we can update problem info for this page

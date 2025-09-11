@@ -68,3 +68,18 @@ webpack-stats.json
 
 # Extension store keys
 *.p12
+
+# Next.js
+.next/
+out/
+.turbo/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Vercel
+.vercel
+
+# SWC
+.swc/
