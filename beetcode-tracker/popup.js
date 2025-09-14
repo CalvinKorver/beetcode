@@ -88,7 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab && tab.url && tab.url.includes('leetcode.com')) {
-        chrome.tabs.sendMessage(tab.id, { 
+        chrome.tabs.sendMessage(tab.id, {
           type: 'TRACK_PROBLEM'
         }, (response) => {
           if (chrome.runtime.lastError) {
@@ -109,6 +109,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (error) {
       console.error('Error sending track message to content script:', error);
+    }
+  });
+
+  // Add Google Sign-in button listener
+  const googleSigninBtn = document.getElementById('google-signin-btn');
+  googleSigninBtn.addEventListener('click', async () => {
+    try {
+      console.log('Starting Google sign-in...');
+      const result = await signInWithGoogle();
+
+      if (result.success) {
+        console.log('Google sign-in successful');
+        alert('Successfully signed in with Google!');
+        // Here you could update the UI to show signed-in state
+        // or store user info in chrome storage
+      }
+    } catch (error) {
+      console.error('Google sign-in failed:', error);
+      alert('Failed to sign in with Google: ' + error.message);
     }
   });
 });
