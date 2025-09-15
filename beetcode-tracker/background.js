@@ -1,3 +1,6 @@
+// Import Supabase client
+import { supabase, storeSession, clearStoredSession } from './supabase-client.js';
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'START_TRACKING') {
     startTracking(message.problem)
@@ -236,4 +239,117 @@ async function handleSubmission(url, duration, isCompleted, timestamp) {
   }
 }
 
+// Add tab listener when background script starts
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.url?.startsWith(chrome.identity.getRedirectURL())) {
+    finishUserOAuth(changeInfo.url);
+  }
+});
 
+// Handle auth state changes
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log('Auth state changed:', event, session ? 'session present' : 'no session');
+
+  if (event === 'SIGNED_OUT') {
+    console.log('User signed out, cleaning up extension data');
+    // Additional cleanup can be done here if needed
+    chrome.notifications?.create({
+      type: 'basic',
+      iconUrl: 'icons/beetcode-32.png',
+      title: 'BeetCode',
+      message: 'Successfully signed out'
+    });
+  } else if (event === 'SIGNED_IN') {
+    console.log('User signed in');
+    chrome.notifications?.create({
+      type: 'basic',
+      iconUrl: 'icons/beetcode-32.png',
+      title: 'BeetCode',
+      message: 'Successfully signed in!'
+    });
+  }
+});
+
+/**
+ * Method used to finish OAuth callback for a user authentication.
+ */
+async function finishUserOAuth(url) {
+  try {
+    console.log(`handling user OAuth callback ...`);
+    console.log('Callback URL:', url);
+
+    // extract tokens from hash
+    const hashMap = parseUrlHash(url);
+    const access_token = hashMap.get('access_token');
+    const refresh_token = hashMap.get('refresh_token');
+
+    console.log('Extracted tokens:', {
+      hasAccessToken: !!access_token,
+      hasRefreshToken: !!refresh_token,
+      accessTokenStart: access_token?.substring(0, 20) + '...',
+      refreshTokenStart: refresh_token?.substring(0, 20) + '...',
+      allHashParams: Array.from(hashMap.entries())
+    });
+
+    if (!access_token || !refresh_token) {
+      throw new Error(`no supabase tokens found in URL hash`);
+    }
+
+    // check if they work
+    const { data, error } = await supabase.auth.setSession({
+      access_token,
+      refresh_token,
+    });
+
+    if (error) {
+      console.error('Error setting session:', error);
+      throw error;
+    }
+
+    // persist session to storage using helper function
+    await storeSession(data.session);
+
+    // Close the auth tab and show success
+    chrome.tabs.query({ url: chrome.identity.getRedirectURL() + '*' }, (tabs) => {
+      if (tabs.length > 0) {
+        chrome.tabs.remove(tabs[0].id);
+      }
+    });
+
+    // Optionally show notification
+    chrome.notifications?.create({
+      type: 'basic',
+      iconUrl: 'icons/beetcode-32.png',
+      title: 'BeetCode',
+      message: 'Successfully signed in with Google!'
+    });
+
+    console.log(`finished handling user OAuth callback`);
+  } catch (error) {
+    console.error('OAuth callback error:', error);
+
+    // Show error notification
+    chrome.notifications?.create({
+      type: 'basic',
+      iconUrl: 'icons/beetcode-32.png',
+      title: 'BeetCode',
+      message: 'Failed to sign in. Please try again.'
+    });
+  }
+}
+
+/**
+ * Helper method used to parse the hash of a redirect URL.
+ */
+function parseUrlHash(url) {
+  const hashParts = new URL(url).hash.slice(1).split('&');
+  const hashMap = new Map(
+    hashParts.map((part) => {
+      const [name, value] = part.split('=');
+      return [name, value];
+    })
+  );
+
+  return hashMap;
+}
+ 
