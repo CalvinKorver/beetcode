@@ -90,12 +90,28 @@ export const supabase = {
 
     async signOut() {
       try {
-        // Clear session from storage
+        // Get session before clearing for server-side logout
+        const session = await getStoredSession()
+
+        // Revoke Google OAuth access through Chrome Identity API
+        await revokeGoogleAccess()
+
+        // Clear session from extension storage
         await clearStoredSession()
 
-        // Optionally call Supabase logout endpoint to invalidate tokens server-side
-        // Note: This may not be necessary for all use cases but ensures complete logout
-        const session = await getStoredSession()
+        // Clear Chrome identity cache to force Google re-authentication
+        if (typeof chrome !== 'undefined' && chrome.identity && chrome.identity.clearAllCachedAuthTokens) {
+          try {
+            await new Promise((resolve) => {
+              chrome.identity.clearAllCachedAuthTokens(resolve)
+            })
+            console.log('Chrome identity cache cleared')
+          } catch (identityError) {
+            console.warn('Failed to clear Chrome identity cache:', identityError)
+          }
+        }
+
+        // Call Supabase logout endpoint to invalidate tokens server-side
         if (session && session.access_token) {
           try {
             await fetch(`${supabaseUrl}/auth/v1/logout`, {
@@ -106,6 +122,7 @@ export const supabase = {
                 'Content-Type': 'application/json'
               }
             })
+            console.log('Server-side logout successful')
           } catch (logoutError) {
             console.warn('Server-side logout failed (may be expected):', logoutError)
           }
@@ -185,5 +202,77 @@ export async function initializeSession() {
   } catch (error) {
     console.error('Error initializing session:', error)
     return null
+  }
+}
+
+// Function to revoke Google OAuth access using Chrome Identity API
+async function revokeGoogleAccess() {
+  try {
+    console.log('Attempting to revoke Google OAuth access...')
+
+    if (typeof chrome !== 'undefined' && chrome.identity) {
+      // First, try to get any cached auth tokens and remove them
+      try {
+        // Get the OAuth2 client ID from manifest
+        const manifest = chrome.runtime.getManifest()
+        const clientId = manifest.oauth2?.client_id
+
+        if (clientId) {
+          // Try to get a token silently to see if we have cached tokens
+          const token = await new Promise((resolve) => {
+            chrome.identity.getAuthToken({
+              interactive: false,
+              scopes: manifest.oauth2?.scopes || ['openid', 'email', 'profile']
+            }, (token) => {
+              if (chrome.runtime.lastError) {
+                resolve(null) // No cached token, which is fine
+              } else {
+                resolve(token)
+              }
+            })
+          })
+
+          if (token) {
+            // Remove the cached token
+            await new Promise((resolve) => {
+              chrome.identity.removeCachedAuthToken({ token }, resolve)
+            })
+            console.log('Removed cached Google OAuth token')
+
+            // Also try to revoke it with Google's endpoint
+            try {
+              const response = await fetch('https://oauth2.googleapis.com/revoke', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `token=${encodeURIComponent(token)}`
+              })
+
+              if (response.ok) {
+                console.log('Google OAuth token revoked successfully at Google')
+              } else {
+                console.warn('Could not revoke token at Google, but local cache cleared')
+              }
+            } catch (revokeError) {
+              console.warn('Could not revoke token at Google endpoint:', revokeError)
+            }
+          } else {
+            console.log('No cached Google OAuth tokens found')
+          }
+        }
+      } catch (tokenError) {
+        console.warn('Error handling cached tokens:', tokenError)
+      }
+
+      // Clear all cached auth tokens as a final step
+      await new Promise((resolve) => {
+        chrome.identity.clearAllCachedAuthTokens(resolve)
+      })
+      console.log('All cached auth tokens cleared')
+    }
+  } catch (error) {
+    console.warn('Error revoking Google OAuth access:', error)
+    // Don't throw error as this shouldn't prevent logout from completing
   }
 }

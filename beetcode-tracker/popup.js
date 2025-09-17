@@ -72,18 +72,22 @@ async function checkAuthState() {
           googleSigninBtn.textContent = 'Signing out...';
           googleSigninBtn.style.backgroundColor = '#ffc107'; // Orange for loading
 
-          // Perform sign out
+          // Perform sign out with enhanced cleanup
           const { error } = await supabase.auth.signOut();
 
           if (error) {
             console.error('Sign out error:', error);
             alert('Failed to sign out: ' + error.message);
           } else {
-            console.log('Sign out successful');
-          }
+            console.log('Extension sign out successful');
 
-          // Refresh UI (will show signed-out state)
-          await checkAuthState();
+            // Open logout page to clear localStorage and show confirmation
+            const logoutUrl = chrome.runtime.getURL('logout.html');
+            await chrome.tabs.create({ url: logoutUrl });
+
+            // Close the popup
+            window.close();
+          }
         } catch (error) {
           console.error('Sign out error:', error);
           alert('Failed to sign out: ' + error.message);

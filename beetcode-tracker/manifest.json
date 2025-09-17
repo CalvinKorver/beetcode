@@ -48,5 +48,12 @@
     "32": "icons/beetcode-32.png",
     "48": "icons/beetcode-32.png",
     "128": "icons/beetcode-64.png"
-  }
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["logout.html", "logout.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
