@@ -84,6 +84,49 @@ create trigger on_auth_user_updated
 create index if not exists profiles_id_idx on public.profiles (id);
 create index if not exists profiles_email_idx on public.profiles (email);
 
+-- Create problems table to track LeetCode problems
+create table if not exists public.problems (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid not null references auth.users on delete cascade,
+  problem_name text not null,
+  leetcode_id integer, -- Official LeetCode problem ID
+  difficulty text not null check (difficulty in ('Easy', 'Medium', 'Hard')),
+  status text not null check (status in ('Attempted', 'Completed')),
+  best_time_ms integer, -- Best completion time in milliseconds
+  first_completed_at timestamp with time zone,
+  last_attempted_at timestamp with time zone default timezone('utc'::text, now()),
+  created_at timestamp with time zone default timezone('utc'::text, now()),
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- Enable Row Level Security for problems
+alter table public.problems enable row level security;
+
+-- Create RLS policies for problems
+-- Users can view their own problems
+create policy "Users can view own problems" on public.problems
+  for select using ( (select auth.uid()) = user_id );
+
+-- Users can insert their own problems
+create policy "Users can insert own problems" on public.problems
+  for insert with check ( (select auth.uid()) = user_id );
+
+-- Users can update their own problems
+create policy "Users can update own problems" on public.problems
+  for update using ( (select auth.uid()) = user_id );
+
+-- Users can delete their own problems
+create policy "Users can delete own problems" on public.problems
+  for delete using ( (select auth.uid()) = user_id );
+
+-- Add indexes for better performance
+create index if not exists problems_user_id_idx on public.problems (user_id);
+create index if not exists problems_leetcode_id_idx on public.problems (leetcode_id);
+create index if not exists problems_difficulty_idx on public.problems (difficulty);
+create index if not exists problems_status_idx on public.problems (status);
+create index if not exists problems_last_attempted_idx on public.problems (last_attempted_at desc);
+
 -- Grant permissions (these should already be set by default in Supabase)
 grant usage on schema public to anon, authenticated;
 grant all on public.profiles to anon, authenticated;
+grant all on public.problems to anon, authenticated;
