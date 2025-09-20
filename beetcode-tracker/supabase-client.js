@@ -56,6 +56,37 @@ export const supabase = {
           expires_at: Date.now() + (3600 * 1000) // 1 hour from now
         }
 
+        // Persist user profile to Supabase database
+        try {
+          const profileData = {
+            id: user.id,
+            email: user.email,
+            full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0],
+            avatar_url: user.user_metadata?.avatar_url,
+            provider: user.app_metadata?.provider || 'google',
+            provider_id: user.user_metadata?.provider_id || user.user_metadata?.sub
+          }
+
+          const profileResponse = await fetch(`${supabaseUrl}/rest/v1/profiles`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${access_token}`,
+              'apikey': supabasePublishableKey,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation,resolution=merge-duplicates'
+            },
+            body: JSON.stringify(profileData)
+          })
+
+          if (profileResponse.ok) {
+            console.log('User profile persisted successfully')
+          } else {
+            console.warn('Failed to persist user profile:', await profileResponse.text())
+          }
+        } catch (profileError) {
+          console.warn('Failed to persist user profile, but continuing with authentication:', profileError)
+        }
+
         return { data: { session, user }, error: null }
       } catch (error) {
         console.error('setSession error:', error)
@@ -149,6 +180,101 @@ export const supabase = {
         }
       })
     }
+  },
+
+  // Database operations
+  from(table) {
+    return {
+      async select(columns = '*') {
+        try {
+          const session = await getStoredSession()
+          if (!session?.access_token) {
+            throw new Error('No authentication token available')
+          }
+
+          const response = await fetch(`${supabaseUrl}/rest/v1/${table}?select=${columns}`, {
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'apikey': supabasePublishableKey,
+              'Content-Type': 'application/json'
+            }
+          })
+
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`HTTP ${response.status}: ${errorText}`)
+          }
+
+          const data = await response.json()
+          return { data, error: null }
+        } catch (error) {
+          console.error('Select error:', error)
+          return { data: null, error }
+        }
+      },
+
+      async insert(values) {
+        try {
+          const session = await getStoredSession()
+          if (!session?.access_token) {
+            throw new Error('No authentication token available')
+          }
+
+          const response = await fetch(`${supabaseUrl}/rest/v1/${table}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'apikey': supabasePublishableKey,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation'
+            },
+            body: JSON.stringify(values)
+          })
+
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`HTTP ${response.status}: ${errorText}`)
+          }
+
+          const data = await response.json()
+          return { data, error: null }
+        } catch (error) {
+          console.error('Insert error:', error)
+          return { data: null, error }
+        }
+      },
+
+      async upsert(values) {
+        try {
+          const session = await getStoredSession()
+          if (!session?.access_token) {
+            throw new Error('No authentication token available')
+          }
+
+          const response = await fetch(`${supabaseUrl}/rest/v1/${table}`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'apikey': supabasePublishableKey,
+              'Content-Type': 'application/json',
+              'Prefer': 'return=representation,resolution=merge-duplicates'
+            },
+            body: JSON.stringify(values)
+          })
+
+          if (!response.ok) {
+            const errorText = await response.text()
+            throw new Error(`HTTP ${response.status}: ${errorText}`)
+          }
+
+          const data = await response.json()
+          return { data, error: null }
+        } catch (error) {
+          console.error('Upsert error:', error)
+          return { data: null, error }
+        }
+      }
+    }
   }
 }
 
@@ -202,6 +328,56 @@ export async function initializeSession() {
   } catch (error) {
     console.error('Error initializing session:', error)
     return null
+  }
+}
+
+// Function to persist user profile data to Supabase
+export async function persistUserProfile(user) {
+  try {
+    console.log('Persisting user profile to Supabase:', user)
+
+    const profileData = {
+      id: user.id,
+      email: user.email,
+      full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0],
+      avatar_url: user.user_metadata?.avatar_url,
+      provider: user.app_metadata?.provider || 'google',
+      provider_id: user.user_metadata?.provider_id || user.user_metadata?.sub
+    }
+
+    // Use upsert to insert or update the profile
+    const { data, error } = await supabase.from('profiles').upsert(profileData)
+
+    if (error) {
+      console.error('Error persisting user profile:', error)
+      return { data: null, error }
+    }
+
+    console.log('User profile persisted successfully:', data)
+    return { data, error: null }
+  } catch (error) {
+    console.error('Error in persistUserProfile:', error)
+    return { data: null, error }
+  }
+}
+
+// Function to get user profile from Supabase
+export async function getUserProfile(userId) {
+  try {
+    console.log('Fetching user profile from Supabase for userId:', userId)
+
+    const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).single()
+
+    if (error) {
+      console.error('Error fetching user profile:', error)
+      return { data: null, error }
+    }
+
+    console.log('User profile fetched successfully:', data)
+    return { data, error: null }
+  } catch (error) {
+    console.error('Error in getUserProfile:', error)
+    return { data: null, error }
   }
 }
 
