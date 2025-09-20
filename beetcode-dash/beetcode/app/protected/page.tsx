@@ -2,58 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/utils/supabase/server";
 import { ProblemsTable } from "@/components/problems-table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-// Dummy data for problems table
-const dummyProblems = [
-  {
-    id: "1",
-    problem_name: "Two Sum",
-    difficulty: "Easy" as const,
-    status: "Completed" as const,
-    best_time_ms: 45000,
-    last_attempted_at: "2024-01-15T10:30:00Z",
-  },
-  {
-    id: "2",
-    problem_name: "Add Two Numbers",
-    difficulty: "Medium" as const,
-    status: "Completed" as const,
-    best_time_ms: 180000,
-    last_attempted_at: "2024-01-14T14:20:00Z",
-  },
-  {
-    id: "3",
-    problem_name: "Longest Substring Without Repeating Characters",
-    difficulty: "Medium" as const,
-    status: "Attempted" as const,
-    best_time_ms: null,
-    last_attempted_at: "2024-01-13T16:45:00Z",
-  },
-  {
-    id: "4",
-    problem_name: "Median of Two Sorted Arrays",
-    difficulty: "Hard" as const,
-    status: "Attempted" as const,
-    best_time_ms: null,
-    last_attempted_at: "2024-01-12T11:15:00Z",
-  },
-  {
-    id: "5",
-    problem_name: "Reverse Integer",
-    difficulty: "Medium" as const,
-    status: "Completed" as const,
-    best_time_ms: 95000,
-    last_attempted_at: "2024-01-11T09:30:00Z",
-  },
-  {
-    id: "6",
-    problem_name: "Palindrome Number",
-    difficulty: "Easy" as const,
-    status: "Completed" as const,
-    best_time_ms: 32000,
-    last_attempted_at: "2024-01-10T15:20:00Z",
-  },
-];
+import { problemsService } from "@/lib/services/problemsService";
 
 export default async function ProtectedPage() {
   const supabase = await createClient();
@@ -63,10 +12,9 @@ export default async function ProtectedPage() {
     redirect("/auth/login");
   }
 
-  // Calculate stats
-  const totalProblems = dummyProblems.length;
-  const completedProblems = dummyProblems.filter(p => p.status === "Completed").length;
-  const attemptedProblems = dummyProblems.filter(p => p.status === "Attempted").length;
+  // Fetch problems data from the service
+  const problems = await problemsService.getProblemsForUser();
+  const stats = problemsService.calculateStats(problems);
 
   return (
     <div className="flex-1 w-full flex flex-col gap-8">
@@ -84,7 +32,7 @@ export default async function ProtectedPage() {
             <CardTitle className="text-sm font-medium">Total Problems</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalProblems}</div>
+            <div className="text-2xl font-bold">{stats.total}</div>
             <p className="text-xs text-muted-foreground">
               Problems you&apos;ve worked on
             </p>
@@ -96,7 +44,7 @@ export default async function ProtectedPage() {
             <CardTitle className="text-sm font-medium">Completed</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{completedProblems}</div>
+            <div className="text-2xl font-bold text-green-600">{stats.completed}</div>
             <p className="text-xs text-muted-foreground">
               Successfully solved problems
             </p>
@@ -108,7 +56,7 @@ export default async function ProtectedPage() {
             <CardTitle className="text-sm font-medium">In Progress</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{attemptedProblems}</div>
+            <div className="text-2xl font-bold text-orange-600">{stats.attempted}</div>
             <p className="text-xs text-muted-foreground">
               Problems still working on
             </p>
@@ -117,7 +65,7 @@ export default async function ProtectedPage() {
       </div>
 
       {/* Problems Table */}
-      <ProblemsTable problems={dummyProblems} />
+      <ProblemsTable problems={problems} />
     </div>
   );
 }

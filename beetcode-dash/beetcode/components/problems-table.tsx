@@ -21,6 +21,10 @@ interface Problem {
   status: "Attempted" | "Completed";
   best_time_ms: number | null;
   last_attempted_at: string;
+  first_completed_at: string | null;
+  leetcode_id: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface ProblemsTableProps {
