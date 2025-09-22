@@ -1,5 +1,5 @@
 // Import Supabase client
-import { supabase, getStoredSession, clearStoredSession } from './supabase-client.js';
+import { supabase, getStoredSession, clearStoredSession, testGetUserProblems } from './supabase-client.js';
 
 function convertDurationToMinutes(duration) {
   if (!duration || typeof duration !== 'string') return 0;
@@ -145,6 +145,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   const exportCsvBtn = document.getElementById('export-csv-btn');
   exportCsvBtn.addEventListener('click', async () => {
     await exportToCSV();
+    settingsDropdown.classList.remove('show');
+  });
+
+  // Add test API call listener
+  const testApiBtn = document.getElementById('test-api-btn');
+  testApiBtn.addEventListener('click', async () => {
+    try {
+      console.log('Test API button clicked');
+      const result = await testGetUserProblems();
+
+      if (result.success) {
+        alert(`API test successful!\nFound ${result.data.length} problems in database.\nCheck console for details.`);
+      } else {
+        alert(`API test failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Test API error:', error);
+      alert(`API test error: ${error.message}`);
+    }
     settingsDropdown.classList.remove('show');
   });
   
