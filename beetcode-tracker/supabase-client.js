@@ -1,9 +1,11 @@
 // Minimal Supabase client for Chrome extension
 // Since we can't use external CDNs due to CSP, we'll create a minimal auth client
 
-// Supabase project configuration
-const supabaseUrl = 'https://hukfgtczrtllqhlahuar.supabase.co'
-const supabasePublishableKey = 'sb_publishable_ih7HMgK8RxsNZtyfZ-RzVw_3ycv4y5M'
+import { config } from './config.js';
+
+// Supabase project configuration (for auth only)
+const supabaseUrl = config.supabase.url;
+const supabasePublishableKey = config.supabase.publishableKey;
 
 // Minimal Supabase auth client
 export const supabase = {
@@ -381,36 +383,6 @@ export async function getUserProfile(userId) {
   }
 }
 
-// Test function to get problems for current user from API
-export async function testGetUserProblems() {
-  try {
-    console.log('Testing API call to get user problems...');
-
-    const session = await getStoredSession();
-    if (!session?.access_token) {
-      throw new Error('No authentication token available');
-    }
-
-    console.log('Using session for API call:', {
-      hasAccessToken: !!session.access_token,
-      userId: session.user?.id
-    });
-
-    // Try to get problems from the problems table
-    const { data, error } = await supabase.from('problems').select('*');
-
-    if (error) {
-      console.error('API call failed:', error);
-      return { success: false, error: error.message };
-    }
-
-    console.log('API call successful! Retrieved problems:', data);
-    return { success: true, data };
-  } catch (error) {
-    console.error('Test API call error:', error);
-    return { success: false, error: error.message };
-  }
-}
 
 // Function to revoke Google OAuth access using Chrome Identity API
 async function revokeGoogleAccess() {

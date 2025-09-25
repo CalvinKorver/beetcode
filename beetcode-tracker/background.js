@@ -1,5 +1,6 @@
-// Import Supabase client
+// Import Supabase client and BeetCode service
 import { supabase, storeSession, clearStoredSession } from './supabase-client.js';
+import { beetcodeService } from './BeetcodeServiceClient.js';
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'START_TRACKING') {
@@ -97,20 +98,21 @@ async function startTracking(problem) {
   try {
     const result = await chrome.storage.local.get(['problems']);
     const problems = result.problems || {};
-    
+
     // Move any currently tracking problems to attempted
     Object.keys(problems).forEach(key => {
       if (problems[key].status === 'TRACKING') {
         problems[key].status = 'ATTEMPTED';
       }
     });
-    
+
     // Check if this problem already exists (using slug as primary key)
     const existingProblem = problems[problem.id];
-    
+
+    let finalProblem;
     if (existingProblem) {
       console.log('BeetCode: Problem already exists, merging data for:', problem.id);
-      
+
       // Merge new data with existing, keeping existing non-null values
       const mergedProblem = {
         ...existingProblem,
@@ -128,17 +130,34 @@ async function startTracking(problem) {
         // If it was deleted, un-delete it
         isDeleted: false
       };
-      
+
       problems[problem.id] = mergedProblem;
+      finalProblem = mergedProblem;
       console.log('BeetCode: Merged problem data:', mergedProblem);
     } else {
       // New problem
       problems[problem.id] = problem;
+      finalProblem = problem;
       console.log('BeetCode: Created new problem:', problem.id);
     }
-    
+
     await chrome.storage.local.set({ problems });
     console.log('BeetCode: Started tracking problem:', problem.id);
+
+    // Sync to web application
+    try {
+      console.log('BeetCode: Syncing problem to web application...');
+      const syncResult = await beetcodeService.syncProblem(finalProblem);
+
+      if (syncResult.success) {
+        console.log('BeetCode: Problem successfully synced to web application');
+      } else {
+        console.warn('BeetCode: Failed to sync problem to web application:', syncResult.error);
+      }
+    } catch (syncError) {
+      console.warn('BeetCode: Error syncing to web application (continuing with local storage):', syncError);
+    }
+
   } catch (error) {
     console.error('Error starting tracking:', error);
     throw error;
@@ -223,9 +242,23 @@ async function handleSubmission(url, duration, isCompleted, timestamp) {
       
       problems[slug] = trackingProblem;
       await chrome.storage.local.set({ problems });
-      
+
       console.log('BeetCode: Submission recorded for problem:', slug, 'Duration:', duration, 'Completed:', isCompleted);
       console.log('BeetCode: Total attempts so far:', trackingProblem.timeEntries.length);
+
+      // Sync updated problem to web application
+      try {
+        console.log('BeetCode: Syncing updated problem to web application...');
+        const syncResult = await beetcodeService.syncProblem(trackingProblem);
+
+        if (syncResult.success) {
+          console.log('BeetCode: Problem submission successfully synced to web application');
+        } else {
+          console.warn('BeetCode: Failed to sync problem submission to web application:', syncResult.error);
+        }
+      } catch (syncError) {
+        console.warn('BeetCode: Error syncing submission to web application (continuing with local storage):', syncError);
+      }
     } else {
       console.error('BeetCode: No tracking problem found for slug:', slug);
       console.error('BeetCode: Available problems:', Object.keys(problems));

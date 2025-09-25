@@ -99,9 +99,9 @@ export class ProblemsService {
   /**
    * Get all problems for the authenticated user
    */
-  async getProblemsForUser(): Promise<Problem[]> {
+  async getProblemsForUser(supabaseClient?: any): Promise<Problem[]> {
     try {
-      const supabase = await this.getSupabaseClient();
+      const supabase = supabaseClient || await this.getSupabaseClient();
 
       // Get the current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -246,9 +246,9 @@ export class ProblemsService {
     best_time_ms?: number | null;
     first_completed_at?: string | null;
     last_attempted_at?: string;
-  }): Promise<Problem | null> {
+  }, supabaseClient?: any): Promise<Problem | null> {
     try {
-      const supabase = await this.getSupabaseClient();
+      const supabase = supabaseClient || await this.getSupabaseClient();
 
       // Get the current user
       const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -352,7 +352,7 @@ export class ProblemsService {
   /**
    * Sync problem data from extension format
    */
-  async syncFromExtension(extensionData: ExtensionProblemData): Promise<Problem | null> {
+  async syncFromExtension(extensionData: ExtensionProblemData, supabaseClient?: any): Promise<Problem | null> {
     try {
       const bestTimeMs = extensionData.bestTime ? this.timeToMilliseconds(extensionData.bestTime) : null;
       const status = this.normalizeStatus(extensionData.status);
@@ -368,7 +368,7 @@ export class ProblemsService {
         last_attempted_at: extensionData.lastAttempted ? new Date(extensionData.lastAttempted).toISOString() : undefined,
       };
 
-      return await this.upsertProblem(problemData);
+      return await this.upsertProblem(problemData, supabaseClient);
     } catch (error) {
       console.error('Unexpected error in syncFromExtension:', error);
       return null;

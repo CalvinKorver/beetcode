@@ -1,5 +1,6 @@
-// Import Supabase client
-import { supabase, getStoredSession, clearStoredSession, testGetUserProblems } from './supabase-client.js';
+// Import clients
+import { supabase, getStoredSession, clearStoredSession } from './supabase-client.js';
+import { beetcodeService } from './BeetcodeServiceClient.js';
 
 function convertDurationToMinutes(duration) {
   if (!duration || typeof duration !== 'string') return 0;
@@ -153,10 +154,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   testApiBtn.addEventListener('click', async () => {
     try {
       console.log('Test API button clicked');
-      const result = await testGetUserProblems();
+      const result = await beetcodeService.testConnection();
 
       if (result.success) {
-        alert(`API test successful!\nFound ${result.data.length} problems in database.\nCheck console for details.`);
+        alert(`API test successful!\n${result.message}\nCheck console for details.`);
       } else {
         alert(`API test failed: ${result.error}`);
       }

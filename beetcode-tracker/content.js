@@ -228,11 +228,11 @@ function attachSubmitButtonListener() {
     console.log(`BeetCode: Button ${index}: "${buttonText}" | Span: "${spanText}"`);
     
     // Check multiple patterns for submit buttons
-    const isSubmitButton = 
+    const isSubmitButton =
       buttonText === 'submit' ||
       spanText === 'submit' ||
-      buttonText.includes('submit') ||
-      spanText.includes('submit');
+      (buttonText && buttonText.includes('submit')) ||
+      (spanText && spanText.includes('submit'));
     
     if (isSubmitButton && !button.hasAttribute('data-beetcode-listener')) {
       console.log('BeetCode: Attaching listener to submit button:', buttonText || spanText);
