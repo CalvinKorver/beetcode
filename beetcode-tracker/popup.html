@@ -11,6 +11,7 @@
     </div>
     <h2><img src="icons/beetcode-hifed.png" style="height: 24px; vertical-align: middle; margin-right: 8px; padding-bottom: 4px" alt="BeetCode">BeetCode</h2>
     <button id="track-problem-btn" class="track-button">Track Problem</button>
+    <button id="google-signin-btn" class="google-signin-button">Sign in with Google</button>
     <div id="problems-list">
       <div id="empty-state">No problems attempted yet!</div>
       <div id="in-progress-section">
@@ -28,8 +29,10 @@
     </div>
     <div class="settings-dropdown" id="settings-dropdown">
       <div class="dropdown-item" id="export-csv-btn">Export CSV</div>
+      <div class="dropdown-item" id="test-api-btn">Test API Call</div>
     </div>
   </div>
-  <script src="popup.js"></script>
+  <script src="auth.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>

@@ -6,8 +6,16 @@
   
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "identity",
+    "tabs",
+    "notifications"
   ],
+
+  "oauth2": {
+    "client_id": "699635422526-ijgogea6agkjj987slnfqpkcjb5f7h3h.apps.googleusercontent.com",
+    "scopes": ["openid", "email", "profile"]
+  },
   
   "content_scripts": [
     {
@@ -20,7 +28,8 @@
   ],
   
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   
   "action": {
@@ -39,5 +48,12 @@
     "32": "icons/beetcode-32.png",
     "48": "icons/beetcode-32.png",
     "128": "icons/beetcode-64.png"
-  }
+  },
+
+  "web_accessible_resources": [
+    {
+      "resources": ["logout.html", "logout.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }

@@ -1,3 +1,7 @@
+// Import clients
+import { supabase, getStoredSession, clearStoredSession } from './supabase-client.js';
+import { beetcodeService } from './BeetcodeServiceClient.js';
+
 function convertDurationToMinutes(duration) {
   if (!duration || typeof duration !== 'string') return 0;
   
@@ -46,7 +50,80 @@ function getShortestTimeDisplay(timeEntries) {
   return `Best: <strong>${displayTime}</strong> ✓`;
 }
 
+async function checkAuthState() {
+  try {
+    const session = await getStoredSession();
+    const googleSigninBtn = document.getElementById('google-signin-btn');
+
+    if (session) {
+      // User is signed in
+      console.log('User is signed in:', session.user);
+
+      // Update button to show signed-in state
+      googleSigninBtn.textContent = `✓ Signed in as ${session.user.email}`;
+      googleSigninBtn.style.backgroundColor = '#28a745'; // Green
+      googleSigninBtn.style.cursor = 'pointer';
+
+      // Change click handler to logout
+      googleSigninBtn.onclick = async () => {
+        try {
+          console.log('Starting sign out process...');
+
+          // Show loading state
+          googleSigninBtn.textContent = 'Signing out...';
+          googleSigninBtn.style.backgroundColor = '#ffc107'; // Orange for loading
+
+          // Perform sign out with enhanced cleanup
+          const { error } = await supabase.auth.signOut();
+
+          if (error) {
+            console.error('Sign out error:', error);
+            alert('Failed to sign out: ' + error.message);
+          } else {
+            console.log('Extension sign out successful');
+
+            // Open logout page to clear localStorage and show confirmation
+            const logoutUrl = chrome.runtime.getURL('logout.html');
+            await chrome.tabs.create({ url: logoutUrl });
+
+            // Close the popup
+            window.close();
+          }
+        } catch (error) {
+          console.error('Sign out error:', error);
+          alert('Failed to sign out: ' + error.message);
+          await checkAuthState(); // Reset UI even on error
+        }
+      };
+
+    } else {
+      // User is not signed in
+      console.log('User is not signed in');
+
+      // Reset button to sign-in state
+      googleSigninBtn.textContent = 'Sign in with Google';
+      googleSigninBtn.style.backgroundColor = '#4285f4'; // Google blue
+      googleSigninBtn.style.cursor = 'pointer';
+
+      // Set click handler to sign in
+      googleSigninBtn.onclick = async () => {
+        try {
+          console.log('Starting Google sign-in...');
+          const result = await loginWithGoogle();
+          console.log('OAuth flow initiated');
+        } catch (error) {
+          console.error('Google sign-in failed:', error);
+          alert('Failed to sign in with Google: ' + error.message);
+        }
+      };
+    }
+  } catch (error) {
+    console.error('Error checking auth state:', error);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
+  await checkAuthState();
   await loadProblems();
   
   // Add settings dropdown toggle listener
@@ -71,6 +148,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     await exportToCSV();
     settingsDropdown.classList.remove('show');
   });
+
+  // Add test API call listener
+  const testApiBtn = document.getElementById('test-api-btn');
+  testApiBtn.addEventListener('click', async () => {
+    try {
+      console.log('Test API button clicked');
+      const result = await beetcodeService.testConnection();
+
+      if (result.success) {
+        alert(`API test successful!\n${result.message}\nCheck console for details.`);
+      } else {
+        alert(`API test failed: ${result.error}`);
+      }
+    } catch (error) {
+      console.error('Test API error:', error);
+      alert(`API test error: ${error.message}`);
+    }
+    settingsDropdown.classList.remove('show');
+  });
   
   // Add event listener for remove buttons (using event delegation)
   document.addEventListener('click', async (e) => {
@@ -88,7 +184,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tab && tab.url && tab.url.includes('leetcode.com')) {
-        chrome.tabs.sendMessage(tab.id, { 
+        chrome.tabs.sendMessage(tab.id, {
           type: 'TRACK_PROBLEM'
         }, (response) => {
           if (chrome.runtime.lastError) {
@@ -111,7 +207,32 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.error('Error sending track message to content script:', error);
     }
   });
+
+  // Google Sign-in button listener is now handled by checkAuthState()
+
+  // Listen for storage changes (when auth completes in background)
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.session) {
+      console.log('Session changed, refreshing auth state');
+      checkAuthState();
+    }
+  });
 });
+
+/**
+ * Method used to login with google provider.
+ */
+async function loginWithGoogle() {
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: chrome.identity.getRedirectURL(),
+    },
+  });
+  if (error) throw error;
+
+  await chrome.tabs.create({ url: data.url });
+}
 
 async function loadProblems() {
   try {
