@@ -38,31 +38,6 @@ h2 {
   background: #004085;
 }
 
-.google-signin-button {
-  width: 100%;
-  background: #4285f4;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  padding: 12px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  margin-bottom: 16px;
-  transition: background-color 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.google-signin-button:hover {
-  background: #3367d6;
-}
-
-.google-signin-button:active {
-  background: #2d5aa0;
-}
 
 #stats {
   background: #f5f5f5;

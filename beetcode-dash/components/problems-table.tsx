@@ -282,7 +282,10 @@ export function ProblemsTable({ problems }: ProblemsTableProps) {
                     {new Date(problem.last_attempted_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
-                    {calculateProblemScore(problem)}
+                    {(() => {
+                      const score = calculateProblemScore(problem);
+                      return isNaN(score) ? "N/A" : score.toString();
+                    })()}
                   </TableCell>
                 </TableRow>
               ))}

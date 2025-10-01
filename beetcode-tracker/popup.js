@@ -56,22 +56,14 @@ async function checkAuthState() {
     const googleSigninBtn = document.getElementById('google-signin-btn');
 
     if (session) {
-      // User is signed in
-      console.log('User is signed in:', session.user);
-
-      // Update button to show signed-in state
-      googleSigninBtn.textContent = `✓ Signed in as ${session.user.email}`;
-      googleSigninBtn.style.backgroundColor = '#28a745'; // Green
-      googleSigninBtn.style.cursor = 'pointer';
-
-      // Change click handler to logout
+      // User is signed in - update dropdown item to show sign out option
+      googleSigninBtn.textContent = `Sign out (${session.user.email})`;
       googleSigninBtn.onclick = async () => {
         try {
           console.log('Starting sign out process...');
 
           // Show loading state
           googleSigninBtn.textContent = 'Signing out...';
-          googleSigninBtn.style.backgroundColor = '#ffc107'; // Orange for loading
 
           // Perform sign out with enhanced cleanup
           const { error } = await supabase.auth.signOut();
@@ -94,6 +86,8 @@ async function checkAuthState() {
           alert('Failed to sign out: ' + error.message);
           await checkAuthState(); // Reset UI even on error
         }
+        // Close settings dropdown
+        document.getElementById('settings-dropdown').classList.remove('show');
       };
 
     } else {
@@ -102,8 +96,6 @@ async function checkAuthState() {
 
       // Reset button to sign-in state
       googleSigninBtn.textContent = 'Sign in with Google';
-      googleSigninBtn.style.backgroundColor = '#4285f4'; // Google blue
-      googleSigninBtn.style.cursor = 'pointer';
 
       // Set click handler to sign in
       googleSigninBtn.onclick = async () => {
@@ -115,6 +107,8 @@ async function checkAuthState() {
           console.error('Google sign-in failed:', error);
           alert('Failed to sign in with Google: ' + error.message);
         }
+        // Close settings dropdown
+        document.getElementById('settings-dropdown').classList.remove('show');
       };
     }
   } catch (error) {
@@ -208,7 +202,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Google Sign-in button listener is now handled by checkAuthState()
 
   // Listen for storage changes (when auth completes in background)
   chrome.storage.onChanged.addListener((changes, namespace) => {
