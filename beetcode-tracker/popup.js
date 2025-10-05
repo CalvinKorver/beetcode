@@ -2,6 +2,24 @@
 import { supabase, getStoredSession, clearStoredSession } from './supabase-client.js';
 import { beetcodeService } from './BeetcodeServiceClient.js';
 
+// Hardcoded suggested problems
+const SUGGESTED_PROBLEMS = [
+  {
+    id: 'two-sum',
+    leetcodeId: '1',
+    name: 'Two Sum',
+    difficulty: 'easy',
+    url: 'https://leetcode.com/problems/two-sum/'
+  },
+  {
+    id: 'add-two-numbers',
+    leetcodeId: '2',
+    name: 'Add Two Numbers',
+    difficulty: 'medium',
+    url: 'https://leetcode.com/problems/add-two-numbers/'
+  }
+];
+
 function convertDurationToMinutes(duration) {
   if (!duration || typeof duration !== 'string') return 0;
   
@@ -119,7 +137,15 @@ async function checkAuthState() {
 document.addEventListener('DOMContentLoaded', async () => {
   await checkAuthState();
   await loadProblems();
-  
+
+  // Add close button listener
+  const closeBtn = document.getElementById('close-btn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      window.close();
+    });
+  }
+
   // Add settings dropdown toggle listener
   const settingsBtn = document.getElementById('settings-btn');
   const settingsDropdown = document.getElementById('settings-dropdown');
@@ -182,8 +208,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           type: 'TRACK_PROBLEM'
         }, (response) => {
           if (chrome.runtime.lastError) {
-            console.error('Runtime error:', chrome.runtime.lastError);
-            alert('Error: ' + chrome.runtime.lastError.message);
+            console.error('Runtime error details:', {
+              message: chrome.runtime.lastError.message,
+              error: chrome.runtime.lastError
+            });
+            alert('Error: ' + (chrome.runtime.lastError.message || 'Could not communicate with content script. Please refresh the LeetCode page and try again.'));
           } else if (response && response.success) {
             console.log('Problem tracking started successfully');
             // Reload problems to show updated display
@@ -199,6 +228,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (error) {
       console.error('Error sending track message to content script:', error);
+      alert('Error: ' + error.message);
     }
   });
 
@@ -249,40 +279,49 @@ function getActiveProblems(problemsArray, status) {
 function displayProblems(problems) {
   const problemsList = document.getElementById('problems-list');
   const emptyState = document.getElementById('empty-state');
-  
+
   const problemsArray = Object.values(problems);
   console.log('All problems:', problemsArray);
-  
+
   const inProgressProblems = getActiveProblems(problemsArray, 'TRACKING');
-  const completedProblems = getActiveProblems(problemsArray, 'COMPLETED');
   const attemptedProblems = getActiveProblems(problemsArray, 'ATTEMPTED');
-  
+
   console.log('In-progress problems:', inProgressProblems);
-  console.log('Completed problems:', completedProblems);
   console.log('Attempted problems:', attemptedProblems);
-  
+
+  // Filter suggested problems - exclude any that are already tracked or attempted
+  const trackedProblemIds = problemsArray
+    .filter(p => !p.isDeleted)
+    .map(p => p.id);
+  const suggestedProblems = SUGGESTED_PROBLEMS.filter(
+    problem => !trackedProblemIds.includes(problem.id)
+  );
+
+  console.log('Suggested problems:', suggestedProblems);
+  console.log('Tracked problem IDs:', trackedProblemIds);
+
   const inProgressSection = document.getElementById('in-progress-section');
   const attemptedSection = document.getElementById('attempted-section');
-  const completedSection = document.getElementById('completed-section');
+  const suggestedSection = document.getElementById('suggested-section');
   const inProgressList = document.getElementById('in-progress-list');
   const attemptedList = document.getElementById('attempted-list');
-  const completedList = document.getElementById('completed-list');
-  
+  const suggestedList = document.getElementById('suggested-list');
+
   if (problemsArray.length === 0) {
     emptyState.style.display = 'block';
     inProgressSection.style.display = 'none';
     attemptedSection.style.display = 'none';
-    completedSection.style.display = 'none';
-    return;
+    // Still show suggested even if no problems tracked yet
+    suggestedSection.style.display = suggestedProblems.length > 0 ? 'block' : 'none';
+  } else {
+    emptyState.style.display = 'none';
+
+    // Show/hide sections based on content
+    inProgressSection.style.display = inProgressProblems.length > 0 ? 'block' : 'none';
+    attemptedSection.style.display = attemptedProblems.length > 0 ? 'block' : 'none';
+    suggestedSection.style.display = suggestedProblems.length > 0 ? 'block' : 'none';
   }
-  
-  emptyState.style.display = 'none';
-  
-  // Show/hide sections based on content
-  inProgressSection.style.display = inProgressProblems.length > 0 ? 'block' : 'none';
-  attemptedSection.style.display = attemptedProblems.length > 0 ? 'block' : 'none';
-  completedSection.style.display = completedProblems.length > 0 ? 'block' : 'none';
-  
+
   // Populate in-progress problems
   inProgressList.innerHTML = inProgressProblems
     .sort((a, b) => b.lastAttempted - a.lastAttempted)
@@ -301,7 +340,7 @@ function displayProblems(problems) {
         </div>
       </div>
     `).join('');
-  
+
   // Populate attempted problems
   attemptedList.innerHTML = attemptedProblems
     .sort((a, b) => b.lastAttempted - a.lastAttempted)
@@ -320,22 +359,16 @@ function displayProblems(problems) {
         </div>
       </div>
     `).join('');
-  
-  // Populate completed problems
-  completedList.innerHTML = completedProblems
-    .sort((a, b) => b.lastAttempted - a.lastAttempted)
+
+  // Populate suggested problems (filtered to exclude tracked ones)
+  suggestedList.innerHTML = suggestedProblems
     .map(problem => `
-      <div class="problem-item ${problem.status ? problem.status.toLowerCase() : 'unknown'}">
+      <div class="problem-item suggested">
         <div class="problem-header">
           <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
           <div class="problem-actions">
             <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><img src="icons/beetcode-32.png" style="height: 16px;" alt="View problem"></a>
-            <button class="remove-button" data-problem-id="${problem.id}" title="Remove problem">×</button>
           </div>
-        </div>
-        <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
-          <span class="attempts-count">${problem.timeEntries ? problem.timeEntries.length : 0} attempts</span>
-          <span class="shortest-time">${getShortestTimeDisplay(problem.timeEntries) || ''}</span>
         </div>
       </div>
     `).join('');

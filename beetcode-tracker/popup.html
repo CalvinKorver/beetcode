@@ -6,10 +6,13 @@
 </head>
 <body>
   <div class="container">
+    <button class="close-button" id="close-btn" title="Close">×</button>
+    <div class="header">
+      <img src="logov2/logo.png" class="logo-icon" alt="BeetCode">
+    </div>
     <div class="settings-icon" id="settings-btn">
       <img src="icons/settings.png" alt="Settings">
     </div>
-    <h2><img src="icons/beetcode-hifed.png" style="height: 24px; vertical-align: middle; margin-right: 8px; padding-bottom: 4px" alt="BeetCode">BeetCode</h2>
     <button id="track-problem-btn" class="track-button">Track Problem</button>
     <div id="problems-list">
       <div id="empty-state">No problems attempted yet!</div>
@@ -21,9 +24,9 @@
         <h3>Attempted</h3>
         <div id="attempted-list"></div>
       </div>
-      <div id="completed-section">
-        <h3>Completed</h3>
-        <div id="completed-list"></div>
+      <div id="suggested-section">
+        <h3>Suggested</h3>
+        <div id="suggested-list"></div>
       </div>
     </div>
     <div class="settings-dropdown" id="settings-dropdown">
