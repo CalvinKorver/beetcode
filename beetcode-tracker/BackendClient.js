@@ -12,9 +12,20 @@ export class BackendClient {
    */
   async apiCall(endpoint, options = {}) {
     try {
+      console.log('=== BackendClient API Call ===');
+      console.log('Endpoint:', endpoint);
+      console.log('Base URL:', this.baseUrl);
+
       const authHeaders = await authService.getAuthHeaders();
+      console.log('Auth headers:', authHeaders ? 'Present' : 'Missing');
+      console.log('Auth headers detail:', authHeaders);
 
       const url = `${this.baseUrl}/api${endpoint}`;
+      console.log('Full URL:', url);
+      console.log('Request method:', options.method || 'GET');
+      console.log('Request body:', options.body);
+
+      console.log('Making fetch request...');
       const response = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
@@ -24,60 +35,102 @@ export class BackendClient {
         ...options
       });
 
+      console.log('Response status:', response.status, response.statusText);
+      console.log('Response OK:', response.ok);
+
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('Response error body:', errorText);
         throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
-      return await response.json();
+      const data = await response.json();
+      console.log('Response data:', data);
+      console.log('=== End API Call (Success) ===');
+
+      return data;
     } catch (error) {
-      console.error(`API call failed [${endpoint}]:`, error);
+      console.error('=== API Call Error ===');
+      console.error('Endpoint:', endpoint);
+      console.error('Error type:', error.name);
+      console.error('Error message:', error.message);
+      console.error('Full error:', error);
+      console.error('=== End API Call Error ===');
       throw error;
     }
   }
 
   /**
-   * Track a new problem or update tracking status
-   * @param {Object} problem - Problem data with id, name, url, difficulty, etc.
-   * @returns {Promise<Object>} The tracked problem from backend
+   * Track a problem - creates or returns existing user_problem record
+   * Per API Design: Send just problemSlug, backend has the metadata via crawler
+   *
+   * @param {string} problemSlug - Problem slug (e.g., "two-sum")
+   * @param {string} status - "Attempted" or "Completed" (defaults to "Attempted")
+   * @param {number|null} time - Time in milliseconds (optional)
+   * @returns {Promise<{userProblemId: string, metadata: Object}>} The user_problem UUID and problem metadata
    */
-  async trackProblem(problem) {
+  async trackProblem(problemSlug, status = 'Attempted', time = null) {
+    console.log('=== trackProblem called ===');
+    console.log('problemSlug:', problemSlug);
+    console.log('status:', status);
+    console.log('time:', time);
+
     const result = await this.apiCall('/problems/track', {
       method: 'POST',
-      body: JSON.stringify(problem)
-    });
-
-    return result.problem;
-  }
-
-  /**
-   * Submit a problem attempt (record time entry and potentially mark complete)
-   * @param {string} problemId - Problem slug/id
-   * @param {number} duration - Time spent in milliseconds
-   * @param {boolean} isCompleted - Whether problem was successfully completed
-   * @param {number} timestamp - Submission timestamp
-   * @returns {Promise<Object>} Updated problem from backend
-   */
-  async submitProblem(problemId, duration, isCompleted, timestamp) {
-    const result = await this.apiCall('/problems/submit', {
-      method: 'POST',
       body: JSON.stringify({
-        problemId,
-        duration,
-        isCompleted,
-        timestamp
+        problemSlug,
+        status,
+        time // milliseconds
       })
     });
 
-    return result.problem;
+    console.log('=== trackProblem result ===');
+    console.log('result:', result);
+
+    // Returns: { success, userProblemId, metadata: { problem_name, difficulty, leetcode_id, problem_url, tags } }
+    return result;
+  }
+
+  /**
+   * Submit a problem attempt (update status and time on existing user_problem)
+   * @param {string} userProblemId - User problem database ID (from trackProblem)
+   * @param {number} duration - Time spent in milliseconds
+   * @param {boolean} isCompleted - Whether problem was successfully completed
+   * @returns {Promise<Object>} Updated user problem from backend
+   */
+  async submitProblem(userProblemId, duration, isCompleted) {
+    const result = await this.apiCall(`/user-problems/${userProblemId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        time: duration, // milliseconds
+        status: isCompleted ? 'Completed' : 'Attempted'
+      })
+    });
+
+    return result.userProblem;
   }
 
   /**
    * Get all problems for the authenticated user
+   * @param {Object} options - Optional query parameters
+   * @param {string} options.status - Filter by "Attempted" or "Completed"
+   * @param {number} options.limit - Limit number of results
+   * @param {number} options.offset - Pagination offset
    * @returns {Promise<Object>} Object containing problems array and stats
    */
-  async getProblems() {
-    const result = await this.apiCall('/problems/user');
+  async getProblems(options = {}) {
+    let endpoint = '/user-problems';
+    const params = new URLSearchParams();
+
+    if (options.status) params.append('status', options.status);
+    if (options.limit) params.append('limit', options.limit.toString());
+    if (options.offset) params.append('offset', options.offset.toString());
+
+    if (params.toString()) {
+      endpoint += `?${params.toString()}`;
+    }
+
+    const result = await this.apiCall(endpoint);
 
     return {
       problems: result.problems,
@@ -86,34 +139,18 @@ export class BackendClient {
   }
 
   /**
-   * Update problem metadata (name, difficulty, leetcodeId, etc.)
-   * @param {string} problemId - Problem slug/id
-   * @param {Object} updates - Fields to update
-   * @returns {Promise<Object>} Updated problem from backend
+   * Update user problem metadata (status, time, etc.)
+   * @param {string} userProblemId - User problem database ID
+   * @param {Object} updates - Fields to update (status, time, title, difficulty, etc.)
+   * @returns {Promise<Object>} Updated user problem from backend
    */
-  async updateProblemInfo(problemId, updates) {
-    const result = await this.apiCall(`/problems/${problemId}`, {
-      method: 'PATCH',
+  async updateProblemInfo(userProblemId, updates) {
+    const result = await this.apiCall(`/user-problems/${userProblemId}`, {
+      method: 'PUT',
       body: JSON.stringify(updates)
     });
 
-    return result.problem;
-  }
-
-  /**
-   * Check if a problem is currently being tracked
-   * @param {string} problemId - Problem slug/id
-   * @returns {Promise<boolean>} True if problem is in TRACKING status
-   */
-  async checkTrackingStatus(problemId) {
-    try {
-      const result = await this.apiCall(`/problems/${problemId}/status`);
-      return result.status === 'TRACKING';
-    } catch (error) {
-      // If problem doesn't exist or error occurs, return false
-      console.warn(`Error checking tracking status for ${problemId}:`, error);
-      return false;
-    }
+    return result.userProblem;
   }
 
   /**

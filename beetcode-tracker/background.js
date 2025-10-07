@@ -1,5 +1,5 @@
 // Import Supabase client and Backend API client
-import { supabase, storeSession, clearStoredSession } from './supabase-client.js';
+import { supabase, storeSession, clearStoredSession, getStoredSession } from './supabase-client.js';
 import { backendClient } from './BackendClient.js';
 
 // Message handlers - thin wrappers around API calls
@@ -47,22 +47,96 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 /**
  * Start tracking a problem - direct API call
+ * Per API Design: Send problemSlug, backend has metadata via crawler
  */
 async function handleStartTracking(problem) {
   try {
-    console.log('BeetCode: Starting tracking for:', problem.id);
+    console.log('=== BeetCode: handleStartTracking START ===');
+    console.log('Problem object received:', problem);
+    console.log('Problem slug (problem.id):', problem.id);
 
-    const trackedProblem = await backendClient.trackProblem(problem);
+    console.log('Calling backendClient.trackProblem...');
+    // Call new API: trackProblem(problemSlug, status, time)
+    // Backend returns { success, userProblemId, metadata }
+    const result = await backendClient.trackProblem(
+      problem.id, // problemSlug
+      'Attempted', // status - always start as Attempted
+      null // time - no time yet when just starting to track
+    );
 
-    console.log('BeetCode: Successfully started tracking:', trackedProblem.id);
+    console.log('backendClient.trackProblem returned:', result);
+
+    if (!result || !result.success) {
+      console.error('Track problem failed - no success in result');
+      throw new Error('Failed to track problem - API returned unsuccessful response');
+    }
+
+    if (!result.userProblemId) {
+      console.error('Track problem failed - no userProblemId in result');
+      throw new Error('Failed to track problem - no userProblemId returned');
+    }
+
+    // Store the userProblemId and metadata in chrome.storage for later use
+    const storageKey = `problem_${problem.id}`;
+    console.log('Storing to chrome.storage with key:', storageKey);
+
+    const storageData = {
+      userProblemId: result.userProblemId,
+      metadata: result.metadata,
+      problemSlug: problem.id,
+      trackedAt: Date.now()
+    };
+
+    console.log('Storage data:', storageData);
+
+    await chrome.storage.local.set({
+      [storageKey]: storageData
+    });
+
+    console.log('Successfully stored to chrome.storage');
+
+    // Also add to 'problems' dictionary for popup display
+    const problemsResult = await chrome.storage.local.get(['problems']);
+    const problems = problemsResult.problems || {};
+
+    problems[problem.id] = {
+      id: problem.id,
+      name: result.metadata.problem_name,
+      difficulty: result.metadata.difficulty?.toLowerCase() || 'medium',
+      leetcodeId: result.metadata.leetcode_id,
+      url: result.metadata.problem_url,
+      status: 'TRACKING',
+      lastAttempted: Date.now(),
+      timeEntries: [],
+      isDeleted: false
+    };
+
+    await chrome.storage.local.set({ problems });
+    console.log('Added problem to problems dictionary for popup display');
+
+    // Verify storage
+    const verification = await chrome.storage.local.get(storageKey);
+    console.log('Verification - read back from storage:', verification);
+
+    console.log('=== BeetCode: Successfully started tracking ===');
+    console.log('Problem slug:', problem.id);
+    console.log('User problem ID:', result.userProblemId);
+    console.log('Metadata:', result.metadata);
+    console.log('=== handleStartTracking END ===');
   } catch (error) {
-    console.error('Error starting tracking:', error);
+    console.error('=== BeetCode: handleStartTracking ERROR ===');
+    console.error('Error type:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    console.error('Full error:', error);
+    console.error('=== handleStartTracking ERROR END ===');
     throw error;
   }
 }
 
 /**
- * Check if a problem is being tracked - direct API call
+ * Check if a problem is being tracked - check chrome.storage
+ * We don't need to call the API since we store tracking info locally
  */
 async function handleCheckTrackingStatus(url) {
   try {
@@ -74,7 +148,11 @@ async function handleCheckTrackingStatus(url) {
       return false;
     }
 
-    const isTracking = await backendClient.checkTrackingStatus(slug);
+    // Check chrome.storage for tracking info
+    const storageKey = `problem_${slug}`;
+    const result = await chrome.storage.local.get(storageKey);
+
+    const isTracking = !!result[storageKey]?.userProblemId;
 
     console.log('BeetCode: Tracking status for', slug, ':', isTracking);
     return isTracking;
@@ -86,6 +164,7 @@ async function handleCheckTrackingStatus(url) {
 
 /**
  * Handle problem submission - direct API call
+ * Per API Design: Use PUT /api/user-problems/[id] with userProblemId
  */
 async function handleProblemSubmission(url, duration, isCompleted, timestamp) {
   try {
@@ -97,14 +176,58 @@ async function handleProblemSubmission(url, duration, isCompleted, timestamp) {
       return;
     }
 
+    // Get the userProblemId from chrome.storage
+    const storageKey = `problem_${slug}`;
+    const result = await chrome.storage.local.get(storageKey);
+    const userProblemId = result[storageKey]?.userProblemId;
+
+    if (!userProblemId) {
+      console.error('BeetCode: No userProblemId found for:', slug);
+      console.error('BeetCode: Problem must be tracked before submission');
+      return;
+    }
+
+    // Convert duration string (e.g., "00:15:23") to milliseconds
+    const durationMs = parseDurationToMilliseconds(duration);
+
+    // Call new API: submitProblem(userProblemId, duration, isCompleted)
     const updatedProblem = await backendClient.submitProblem(
-      slug,
-      duration,
-      isCompleted,
-      timestamp
+      userProblemId,
+      durationMs,
+      isCompleted
     );
 
-    console.log('BeetCode: Submission recorded successfully:', updatedProblem.id, 'Status:', updatedProblem.status);
+    console.log('BeetCode: Submission recorded successfully');
+    console.log('BeetCode: Updated problem:', updatedProblem);
+
+    // Update the 'problems' dictionary for popup display
+    const problemsResult = await chrome.storage.local.get(['problems']);
+    const problems = problemsResult.problems || {};
+
+    if (problems[slug]) {
+      // Add time entry
+      if (!problems[slug].timeEntries) {
+        problems[slug].timeEntries = [];
+      }
+      problems[slug].timeEntries.push({
+        duration: duration,
+        timestamp: timestamp || Date.now()
+      });
+
+      // Update status
+      problems[slug].status = isCompleted ? 'COMPLETED' : 'ATTEMPTED';
+      problems[slug].lastAttempted = timestamp || Date.now();
+
+      if (isCompleted && !problems[slug].completedAt) {
+        problems[slug].completedAt = timestamp || Date.now();
+      }
+
+      await chrome.storage.local.set({ problems });
+      console.log('BeetCode: Updated problem in problems dictionary');
+    }
+
+    // Optionally clear tracking data after successful submission
+    // await chrome.storage.local.remove(storageKey);
   } catch (error) {
     console.error('Error handling submission:', error);
     throw error;
@@ -112,28 +235,64 @@ async function handleProblemSubmission(url, duration, isCompleted, timestamp) {
 }
 
 /**
- * Update problem metadata - direct API call
+ * Parse duration string (e.g., "00:15:23" or "15:23") to milliseconds
+ */
+function parseDurationToMilliseconds(duration) {
+  if (!duration) return 0;
+
+  const parts = duration.split(':');
+  let hours = 0, minutes = 0, seconds = 0;
+
+  if (parts.length === 3) {
+    // Format: "HH:MM:SS"
+    hours = parseInt(parts[0], 10) || 0;
+    minutes = parseInt(parts[1], 10) || 0;
+    seconds = parseInt(parts[2], 10) || 0;
+  } else if (parts.length === 2) {
+    // Format: "MM:SS"
+    minutes = parseInt(parts[0], 10) || 0;
+    seconds = parseInt(parts[1], 10) || 0;
+  }
+
+  return (hours * 3600 + minutes * 60 + seconds) * 1000; // Convert to milliseconds
+}
+
+/**
+ * Update problem metadata - optional, since metadata comes from crawler
+ * Only used if we detect metadata that crawler doesn't have yet
  */
 async function handleUpdateProblemInfo(problem) {
   try {
     console.log('BeetCode: Updating problem info for:', problem.id);
 
+    // Get the userProblemId from chrome.storage
+    const storageKey = `problem_${problem.id}`;
+    const result = await chrome.storage.local.get(storageKey);
+    const userProblemId = result[storageKey]?.userProblemId;
+
+    if (!userProblemId) {
+      console.log('BeetCode: Problem not being tracked, skipping metadata update');
+      return;
+    }
+
     const updates = {};
-    if (problem.name) updates.name = problem.name;
+    if (problem.name) updates.title = problem.name;
     if (problem.leetcodeId) updates.leetcodeId = problem.leetcodeId;
-    if (problem.difficulty) updates.difficulty = problem.difficulty;
+    if (problem.difficulty) updates.difficulty = problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1); // Capitalize
 
     if (Object.keys(updates).length === 0) {
       console.log('BeetCode: No updates to apply');
       return;
     }
 
-    const updatedProblem = await backendClient.updateProblemInfo(problem.id, updates);
+    // Use the new API: updateProblemInfo(userProblemId, updates)
+    const updatedProblem = await backendClient.updateProblemInfo(userProblemId, updates);
 
-    console.log('BeetCode: Problem info updated successfully:', updatedProblem.id);
+    console.log('BeetCode: Problem info updated successfully:', updatedProblem);
   } catch (error) {
     console.error('Error updating problem info:', error);
-    throw error;
+    // Don't throw - this is optional functionality
+    console.log('BeetCode: Continuing despite metadata update failure');
   }
 }
 
@@ -148,6 +307,32 @@ function getSlugFromUrl(url) {
   return null;
 }
 
+// Token refresh on extension startup
+chrome.runtime.onStartup.addListener(async () => {
+  console.log('Extension starting up, checking session...');
+  try {
+    const session = await getStoredSession();
+    if (session?.refresh_token) {
+      console.log('Refreshing session on startup...');
+      const { data, error } = await supabase.auth.refreshSession({
+        refresh_token: session.refresh_token
+      });
+
+      if (error) {
+        console.error('Failed to refresh session on startup:', error);
+        await clearStoredSession();
+      } else if (data.session) {
+        console.log('Session refreshed successfully on startup');
+        await storeSession(data.session);
+      }
+    } else {
+      console.log('No session to refresh on startup');
+    }
+  } catch (error) {
+    console.error('Error during startup session refresh:', error);
+  }
+});
+
 // OAuth and Authentication handlers
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.url?.startsWith(chrome.identity.getRedirectURL())) {
@@ -156,24 +341,34 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
 });
 
 // Handle auth state changes
-supabase.auth.onAuthStateChange((event, session) => {
+supabase.auth.onAuthStateChange(async (event, session) => {
   console.log('Auth state changed:', event, session ? 'session present' : 'no session');
 
-  if (event === 'SIGNED_OUT') {
-    console.log('User signed out');
+  // Store session on sign-in or token refresh
+  if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+    if (session) {
+      console.log('Storing session after', event);
+      await storeSession(session);
+    }
+
+    if (event === 'SIGNED_IN') {
+      chrome.notifications?.create({
+        type: 'basic',
+        iconUrl: 'icons/beetcode-32.png',
+        title: 'BeetCode',
+        message: 'Successfully signed in!'
+      });
+    } else if (event === 'TOKEN_REFRESHED') {
+      console.log('Token refreshed and stored');
+    }
+  } else if (event === 'SIGNED_OUT') {
+    console.log('User signed out, clearing session');
+    await clearStoredSession();
     chrome.notifications?.create({
       type: 'basic',
       iconUrl: 'icons/beetcode-32.png',
       title: 'BeetCode',
       message: 'Successfully signed out'
-    });
-  } else if (event === 'SIGNED_IN') {
-    console.log('User signed in');
-    chrome.notifications?.create({
-      type: 'basic',
-      iconUrl: 'icons/beetcode-32.png',
-      title: 'BeetCode',
-      message: 'Successfully signed in!'
     });
   }
 });

@@ -1,6 +1,6 @@
 // Import clients
 import { supabase, getStoredSession, clearStoredSession } from './supabase-client.js';
-import { beetcodeService } from './BeetcodeServiceClient.js';
+import { backendClient } from './BackendClient.js';
 
 // Hardcoded suggested problems
 const SUGGESTED_PROBLEMS = [
@@ -70,7 +70,25 @@ function getShortestTimeDisplay(timeEntries) {
 
 async function checkAuthState() {
   try {
-    const session = await getStoredSession();
+    // Refresh session if we have a refresh token
+    let session = await getStoredSession();
+    if (session?.refresh_token) {
+      console.log('Refreshing session...');
+      const { data, error } = await supabase.auth.refreshSession({
+        refresh_token: session.refresh_token
+      });
+
+      if (error) {
+        console.error('Failed to refresh session:', error);
+        await clearStoredSession();
+        session = null;
+      } else if (data.session) {
+        console.log('Session refreshed successfully');
+        session = data.session;
+        // Session will be stored by onAuthStateChange handler
+      }
+    }
+
     const googleSigninBtn = document.getElementById('google-signin-btn');
 
     if (session) {
@@ -174,7 +192,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   testApiBtn.addEventListener('click', async () => {
     try {
       console.log('Test API button clicked');
-      const result = await beetcodeService.testConnection();
+      const result = await backendClient.testConnection();
 
       if (result.success) {
         alert(`API test successful!\n${result.message}\nCheck console for details.`);
