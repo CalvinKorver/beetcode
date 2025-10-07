@@ -26,6 +26,7 @@ async function main() {
     headless: process.env.HEADLESS !== 'false',
     skipExisting: process.env.SKIP_EXISTING !== 'false', // Default to true
     resumeFromLargest: process.env.RESUME_FROM_LARGEST === 'true', // Default to false
+    cookiesFile: process.env.AUTH_COOKIES_FILE || undefined,
   };
 
   console.log('Configuration:');
@@ -34,7 +35,8 @@ async function main() {
   console.log(`  Rate Limit: ${config.rateLimitMs}ms`);
   console.log(`  Headless: ${config.headless}`);
   console.log(`  Skip Existing: ${config.skipExisting}`);
-  console.log(`  Resume From Largest: ${config.resumeFromLargest}\n`);
+  console.log(`  Resume From Largest: ${config.resumeFromLargest}`);
+  console.log(`  Authentication: ${config.cookiesFile ? `Enabled (${config.cookiesFile})` : 'Disabled (free problems only)'}\n`);
 
   // Initialize database service
   const db = new DatabaseService(supabaseUrl, supabaseKey);

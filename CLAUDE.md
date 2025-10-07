@@ -78,6 +78,13 @@ npm run clean            # Remove dist/
 - `MAX_PROBLEMS` - Number of problems to crawl
 - `RATE_LIMIT_MS` - Delay between requests (default: 2000)
 - `RESUME_FROM_LARGEST` - Start from largest leetcode_id in database (ignores START_URL)
+- `AUTH_COOKIES_FILE` - Path to cookies JSON for authentication (optional, enables Premium problems)
+
+**Authentication** (for Premium problems):
+- See [beetcode-crawler/AUTHENTICATION.md](beetcode-crawler/AUTHENTICATION.md) for detailed setup
+- Export cookies from browser after logging into LeetCode
+- Set `AUTH_COOKIES_FILE=./leetcode-cookies.json` in `.env`
+- Without authentication, crawler only accesses free problems
 
 ### beetcode-tracker (Chrome Extension)
 
@@ -215,3 +222,7 @@ RESUME_FROM_LARGEST=true MAX_PROBLEMS=10 npm run dev
 - Verify using service role key (not anon key)
 - Check `leetcode_problems` table exists (run migration)
 - Try non-headless mode: `HEADLESS=false npm start`
+
+### Rules for developing:
+
+- Every new feature or change should be accompanied by unit testing if applicable and then a run of the tests in that directory's test folder.

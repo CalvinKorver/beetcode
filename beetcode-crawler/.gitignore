@@ -3,3 +3,7 @@ dist/
 .env
 *.log
 .DS_Store
+
+# Authentication cookies (sensitive data)
+*cookies*.json
+!cookies.example.json

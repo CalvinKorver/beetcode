@@ -1,5 +1,7 @@
-import puppeteer, { Browser, Page } from 'puppeteer';
+import puppeteer, { Browser, Page, Protocol } from 'puppeteer';
 import { LeetCodeProblem, DatabaseService } from './db.js';
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
 export interface CrawlerConfig {
   startUrl: string;
@@ -8,6 +10,7 @@ export interface CrawlerConfig {
   headless: boolean;
   skipExisting: boolean;
   resumeFromLargest: boolean;
+  cookiesFile?: string;
 }
 
 /**
@@ -30,6 +33,78 @@ export class LeetCodeCrawler {
   }
 
   /**
+   * Load cookies from a JSON file
+   */
+  private async loadCookies(cookiesFile: string): Promise<Protocol.Network.Cookie[]> {
+    try {
+      const cookiesPath = path.resolve(cookiesFile);
+      const cookiesString = await fs.readFile(cookiesPath, 'utf-8');
+      const cookies = JSON.parse(cookiesString);
+
+      // Validate that it's an array
+      if (!Array.isArray(cookies)) {
+        throw new Error('Cookies file must contain an array of cookie objects');
+      }
+
+      return cookies;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new Error(`Cookies file not found: ${cookiesFile}`);
+      }
+      throw new Error(`Failed to load cookies: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Save current session cookies to a file
+   * Useful for users to export cookies after manual login
+   */
+  async saveCookies(outputFile: string): Promise<void> {
+    if (!this.page) {
+      throw new Error('Browser not initialized');
+    }
+
+    try {
+      const cookies = await this.page.cookies();
+      const outputPath = path.resolve(outputFile);
+      await fs.writeFile(outputPath, JSON.stringify(cookies, null, 2), 'utf-8');
+      console.log(`✓ Cookies saved to: ${outputPath}`);
+    } catch (error) {
+      throw new Error(`Failed to save cookies: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Authenticate by loading cookies into the browser session
+   */
+  private async authenticate(): Promise<void> {
+    if (!this.config.cookiesFile || !this.page) {
+      return;
+    }
+
+    try {
+      console.log('Loading authentication cookies...');
+      const cookies = await this.loadCookies(this.config.cookiesFile);
+
+      // Map cookies to Puppeteer's expected format
+      // Filter out partitionKey as it may cause type issues
+      const puppeteerCookies = cookies.map((cookie) => {
+        const { partitionKey, ...rest } = cookie as any;
+        return rest;
+      });
+
+      // Set cookies in the browser
+      await this.page.setCookie(...puppeteerCookies);
+
+      console.log('✓ Authentication cookies loaded successfully');
+      console.log('  Authenticated session enabled for Premium problems');
+    } catch (error) {
+      console.error('⚠️  Authentication failed:', (error as Error).message);
+      console.error('   Continuing without authentication (free problems only)');
+    }
+  }
+
+  /**
    * Initialize the browser and page
    */
   async init(): Promise<void> {
@@ -47,6 +122,9 @@ export class LeetCodeCrawler {
     );
 
     console.log('Browser initialized successfully');
+
+    // Authenticate if cookies file is provided
+    await this.authenticate();
   }
 
   /**
