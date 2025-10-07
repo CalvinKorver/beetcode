@@ -6,6 +6,9 @@ export interface LeetCodeProblem {
   problem_name: string;
   difficulty: 'Easy' | 'Medium' | 'Hard';
   problem_url: string;
+  crawl_status?: 'success' | 'failed' | 'partial';
+  crawl_error?: string;
+  crawl_attempts?: number;
 }
 
 export class DatabaseService {
@@ -29,6 +32,9 @@ export class DatabaseService {
             problem_name: problem.problem_name,
             difficulty: problem.difficulty,
             problem_url: problem.problem_url,
+            crawl_status: problem.crawl_status || 'success',
+            crawl_error: problem.crawl_error || null,
+            crawl_attempts: problem.crawl_attempts || 1,
             crawled_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           },
@@ -62,6 +68,9 @@ export class DatabaseService {
         problem_name: problem.problem_name,
         difficulty: problem.difficulty,
         problem_url: problem.problem_url,
+        crawl_status: problem.crawl_status || 'success',
+        crawl_error: problem.crawl_error || null,
+        crawl_attempts: problem.crawl_attempts || 1,
         crawled_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }));

@@ -72,10 +72,35 @@ async function main() {
       console.log('\nNo problems to save');
     }
 
+    // Calculate statistics
+    const successCount = problems.filter(p => p.crawl_status === 'success' || !p.crawl_status).length;
+    const failedCount = problems.filter(p => p.crawl_status === 'failed').length;
+    const partialCount = problems.filter(p => p.crawl_status === 'partial').length;
+
     console.log('\n=== Crawl Summary ===');
-    console.log(`Problems crawled: ${problems.length}`);
-    console.log(`Problems saved: ${savedCount}`);
-    console.log('Status: SUCCESS ✓');
+    console.log(`Total problems processed: ${problems.length}`);
+    console.log(`  ✓ Successful: ${successCount}`);
+    if (partialCount > 0) {
+      console.log(`  ⚠️  Partial: ${partialCount}`);
+    }
+    if (failedCount > 0) {
+      console.log(`  ❌ Failed: ${failedCount}`);
+    }
+    console.log(`Problems saved to database: ${savedCount}`);
+
+    // List failed problems if any
+    if (failedCount > 0 || partialCount > 0) {
+      console.log('\n=== Issues Encountered ===');
+      problems.forEach(p => {
+        if (p.crawl_status === 'failed' || p.crawl_status === 'partial') {
+          console.log(`  ${p.crawl_status === 'failed' ? '❌' : '⚠️'}  ${p.problem_slug}`);
+          console.log(`     URL: ${p.problem_url}`);
+          console.log(`     Error: ${p.crawl_error}`);
+        }
+      });
+    }
+
+    console.log('\nStatus: SUCCESS ✓');
   } catch (error) {
     console.error('\n=== Crawl Failed ===');
     console.error('Error:', error);

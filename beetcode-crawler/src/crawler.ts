@@ -142,21 +142,30 @@ export class LeetCodeCrawler {
   /**
    * Extract problem information from the current page
    */
-  private async extractProblemInfo(url: string): Promise<LeetCodeProblem | null> {
+  private async extractProblemInfo(url: string): Promise<LeetCodeProblem> {
     if (!this.page) {
-      console.error('Page not initialized');
-      return null;
+      throw new Error('Page not initialized');
     }
 
-    try {
-      // Extract problem slug from URL
-      const slugMatch = url.match(/\/problems\/([^\/]+)/);
-      if (!slugMatch) {
-        console.error('Could not extract slug from URL:', url);
-        return null;
-      }
-      const problemSlug = slugMatch[1];
+    // Extract problem slug from URL (always possible)
+    const slugMatch = url.match(/\/problems\/([^\/]+)/);
+    if (!slugMatch) {
+      const error = 'Could not extract slug from URL';
+      console.error(`❌ ${error}:`, url);
+      return {
+        problem_slug: 'unknown',
+        leetcode_id: null,
+        problem_name: 'Unknown Problem',
+        difficulty: 'Medium',
+        problem_url: url,
+        crawl_status: 'failed',
+        crawl_error: error,
+        crawl_attempts: 1,
+      };
+    }
+    const problemSlug = slugMatch[1];
 
+    try {
       // Wait for the title element to load
       await this.page.waitForSelector('#qd-content a[href*="/problems/"]:not([href*="/discuss/"])', {
         timeout: 10000,
@@ -199,8 +208,18 @@ export class LeetCodeCrawler {
       });
 
       if (!problemData.problemTitle) {
-        console.error('Could not extract problem title from page');
-        return null;
+        const error = 'Could not extract problem title from page';
+        console.error(`❌ ${error}`);
+        return {
+          problem_slug: problemSlug,
+          leetcode_id: null,
+          problem_name: 'Unknown Problem',
+          difficulty: 'Medium',
+          problem_url: url,
+          crawl_status: 'partial',
+          crawl_error: error,
+          crawl_attempts: 1,
+        };
       }
 
       const problem: LeetCodeProblem = {
@@ -209,16 +228,29 @@ export class LeetCodeCrawler {
         problem_name: problemData.problemTitle,
         difficulty: problemData.difficulty,
         problem_url: url,
+        crawl_status: 'success',
+        crawl_attempts: 1,
       };
 
       console.log(
-        `Extracted: ${problem.leetcode_id}. ${problem.problem_name} (${problem.difficulty})`
+        `✓ Extracted: ${problem.leetcode_id}. ${problem.problem_name} (${problem.difficulty})`
       );
 
       return problem;
     } catch (error) {
-      console.error('Error extracting problem info:', error);
-      return null;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`❌ Error extracting problem info: ${errorMessage}`);
+
+      return {
+        problem_slug: problemSlug,
+        leetcode_id: null,
+        problem_name: 'Unknown Problem',
+        difficulty: 'Medium',
+        problem_url: url,
+        crawl_status: 'failed',
+        crawl_error: errorMessage,
+        crawl_attempts: 1,
+      };
     }
   }
 
@@ -362,15 +394,17 @@ export class LeetCodeCrawler {
         }
       }
 
-      // Extract problem information
+      // Extract problem information (always returns a problem, even if failed)
       const problem = await this.extractProblemInfo(currentUrl);
-      if (problem) {
-        this.crawledProblems.push(problem);
-        problemCount++;
-        console.log(`✓ Crawled: ${problem.problem_name}`);
+      this.crawledProblems.push(problem);
+      problemCount++;
+
+      if (problem.crawl_status === 'success' || !problem.crawl_status) {
         console.log(`Progress: ${problemCount}/${this.config.maxProblems}\n`);
       } else {
-        console.warn('Failed to extract problem info, continuing...\n');
+        console.warn(`⚠️  ${problem.crawl_status.toUpperCase()}: ${problem.problem_slug}`);
+        console.warn(`   Reason: ${problem.crawl_error || 'Unknown error'}`);
+        console.log(`Progress: ${problemCount}/${this.config.maxProblems}\n`);
       }
 
       // Stop if we've reached the limit
