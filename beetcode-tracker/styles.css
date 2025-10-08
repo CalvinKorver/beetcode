@@ -132,7 +132,7 @@ h3 {
 .problem-item {
   border: 1px solid #e5e7eb;
   border-radius: 10px;
-  padding: 14px 16px;
+  padding: 12px 14px;
   margin-bottom: 10px;
   background: white;
   transition: all 0.2s ease;
@@ -147,7 +147,6 @@ h3 {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
 }
 
 .problem-name {
@@ -226,6 +225,13 @@ h3 {
   opacity: 0.7;
 }
 
+.problem-link svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+}
+
 .problem-actions {
   display: flex;
   align-items: center;
@@ -236,12 +242,12 @@ h3 {
   background: none;
   border: none;
   color: #9ca3af;
-  font-size: 34px;
+  font-size: 18px;
   font-weight: normal;
   cursor: pointer;
   padding: 0;
-  width: 34px;
-  height: 34px;
+  width: 20px;
+  height: 20px;
   display: flex;
   align-items: center;
   justify-content: center;

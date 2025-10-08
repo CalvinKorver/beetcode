@@ -1,10 +1,9 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import Link from "next/link";
+import Image from "next/image";
 import {
-  Code,
   TrendingUp,
   Target,
   Download,
@@ -18,9 +17,7 @@ export default function Home() {
       <nav className="w-full border-b border-b-foreground/10 h-16">
         <div className="w-full max-w-7xl mx-auto flex justify-between items-center p-3 px-5">
           <div className="flex gap-2 items-center font-bold text-xl">
-            <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg flex items-center justify-center">
-              <Code className="w-4 h-4 text-white" />
-            </div>
+            <Image src="/beetcode-logo.png" alt="Beetcode" width={32} height={32} />
             <Link href={"/"} className="text-foreground">Beetcode</Link>
           </div>
           <div className="flex items-center gap-4">
@@ -34,11 +31,8 @@ export default function Home() {
       {/* Hero Section */}
       <section className="px-4 py-20 bg-gradient-to-b from-background to-muted/20">
         <div className="max-w-6xl mx-auto text-center">
-          <Badge variant="secondary" className="mb-6">
-            🚀 Track Your Coding Progress
-          </Badge>
-          <h1 className="text-4xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-            Master LeetCode with
+          <h1 className="text-4xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent leading-tight">
+            Level up your LeetCode with
             <br />Smart Progress Tracking
           </h1>
           <p className="text-xl text-muted-foreground mb-8 max-w-2xl mx-auto">
@@ -106,17 +100,6 @@ export default function Home() {
               </CardContent>
             </Card>
 
-<Card className="p-6 hover:shadow-lg transition-shadow">
-              <CardContent className="p-0">
-                <div className="w-12 h-12 bg-cyan-100 dark:bg-cyan-900/30 rounded-lg flex items-center justify-center mb-4">
-                  <Code className="w-6 h-6 text-cyan-600 dark:text-cyan-400" />
-                </div>
-                <h3 className="font-semibold text-lg mb-2">Topic Analysis</h3>
-                <p className="text-muted-foreground">
-                  Detailed breakdown of your performance across different algorithm topics and data structures.
-                </p>
-              </CardContent>
-            </Card>
           </div>
         </div>
       </section>
@@ -125,10 +108,10 @@ export default function Home() {
       <section className="px-4 py-20 bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-950/20 dark:to-red-950/20">
         <div className="max-w-4xl mx-auto text-center">
           <h2 className="text-3xl md:text-4xl font-bold mb-4">
-            Ready to supercharge your coding practice?
+            Supercharge your coding practice.
           </h2>
           <p className="text-xl text-muted-foreground mb-8">
-            Join thousands of developers who are already using Beetcode to ace their coding interviews.
+            Try Beetcode to ace your next coding interview.
           </p>
           <Button size="lg" className="text-lg px-12 py-6 mb-6">
             <Download className="w-5 h-5 mr-2" />
@@ -142,9 +125,7 @@ export default function Home() {
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6">
             <div className="flex gap-2 items-center font-bold text-xl">
-              <div className="w-8 h-8 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg flex items-center justify-center">
-                <Code className="w-4 h-4 text-white" />
-              </div>
+              <Image src="/beetcode-logo.png" alt="Beetcode" width={32} height={32} />
               <span>Beetcode</span>
             </div>
             <div className="flex items-center gap-8 text-sm text-muted-foreground">

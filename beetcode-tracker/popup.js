@@ -1,6 +1,7 @@
 // Import clients
 import { supabase, getStoredSession, clearStoredSession } from './supabase-client.js';
 import { backendClient } from './BackendClient.js';
+import { config } from './config.js';
 
 // Hardcoded suggested problems
 const SUGGESTED_PROBLEMS = [
@@ -44,28 +45,6 @@ function getDifficultyStyle(difficulty) {
     default:
       return 'background-color: #f3f4f6; color: #374151;';
   }
-}
-
-function getShortestTimeDisplay(timeEntries) {
-  if (!timeEntries || timeEntries.length === 0) return '';
-  
-  const shortestEntry = timeEntries
-    .map(entry => ({
-      ...entry,
-      totalMinutes: convertDurationToMinutes(entry.duration)
-    }))
-    .sort((a, b) => a.totalMinutes - b.totalMinutes)[0];
-  
-  // Convert hh:mm:ss to mm:ss format
-  const parts = shortestEntry.duration.split(':');
-  const hours = parseInt(parts[0], 10) || 0;
-  const minutes = parseInt(parts[1], 10) || 0;
-  const seconds = parts[2] || '00';
-  
-  const totalMinutes = hours * 60 + minutes;
-  const displayTime = `${totalMinutes}:${seconds}`;
-  
-  return `Best: <strong>${displayTime}</strong> ✓`;
 }
 
 async function checkAuthState() {
@@ -155,6 +134,15 @@ async function checkAuthState() {
 document.addEventListener('DOMContentLoaded', async () => {
   await checkAuthState();
   await loadProblems();
+
+  // Add logo click listener to open dashboard
+  const logoIcon = document.querySelector('.logo-icon');
+  if (logoIcon) {
+    logoIcon.style.cursor = 'pointer';
+    logoIcon.addEventListener('click', () => {
+      chrome.tabs.create({ url: config.dashboardUrl });
+    });
+  }
 
   // Add close button listener
   const closeBtn = document.getElementById('close-btn');
@@ -346,15 +334,11 @@ function displayProblems(problems) {
     .map(problem => `
       <div class="problem-item tracking">
         <div class="problem-header">
-          <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
+          <div class="problem-name">${problem.leetcodeId ? `${problem.leetcodeId}. ` : ''}${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
           <div class="problem-actions">
-            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><img src="icons/beetcode-32.png" style="height: 16px;" alt="View problem"></a>
+            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a>
             <button class="remove-button" data-problem-id="${problem.id}" title="Stop tracking problem">×</button>
           </div>
-        </div>
-        <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
-          <span class="attempts-count">${problem.timeEntries ? problem.timeEntries.length : 0} attempts</span>
-          <span class="shortest-time">${getShortestTimeDisplay(problem.timeEntries) || ''}</span>
         </div>
       </div>
     `).join('');
@@ -365,15 +349,11 @@ function displayProblems(problems) {
     .map(problem => `
       <div class="problem-item ${problem.status ? problem.status.toLowerCase() : 'unknown'}">
         <div class="problem-header">
-          <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
+          <div class="problem-name">${problem.leetcodeId ? `${problem.leetcodeId}. ` : ''}${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
           <div class="problem-actions">
-            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><img src="icons/beetcode-32.png" style="height: 16px;" alt="View problem"></a>
+            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a>
             <button class="remove-button" data-problem-id="${problem.id}" title="Remove problem">×</button>
           </div>
-        </div>
-        <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
-          <span class="attempts-count">${problem.timeEntries ? problem.timeEntries.length : 0} attempts</span>
-          <span class="shortest-time">${getShortestTimeDisplay(problem.timeEntries) || ''}</span>
         </div>
       </div>
     `).join('');
@@ -383,9 +363,9 @@ function displayProblems(problems) {
     .map(problem => `
       <div class="problem-item suggested">
         <div class="problem-header">
-          <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
+          <div class="problem-name">${problem.leetcodeId ? `${problem.leetcodeId}. ` : ''}${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
           <div class="problem-actions">
-            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><img src="icons/beetcode-32.png" style="height: 16px;" alt="View problem"></a>
+            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a>
           </div>
         </div>
       </div>
