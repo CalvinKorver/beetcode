@@ -1,10 +1,33 @@
+// Import environment-specific configuration
+// If .env.config.js doesn't exist, we'll use the defaults below
+let envConfig = {
+  dashboardUrl: 'http://localhost:3000',
+  serviceUrl: 'http://localhost:3000'
+};
+
+// Dynamically import environment config (no top-level await for service worker compatibility)
+import('./.env.config.js')
+  .then((imported) => {
+    envConfig = imported.envConfig;
+    // Update config object with new values
+    config.dashboardUrl = envConfig.dashboardUrl;
+    config.serviceUrl = envConfig.serviceUrl;
+    console.log('Environment configuration loaded:', envConfig);
+  })
+  .catch(() => {
+    // .env.config.js doesn't exist, using defaults
+    console.warn('No .env.config.js found, using default configuration. Copy .env.config.template.js to .env.config.js to customize.');
+  });
+
 // Extension configuration
 export const config = {
-  // Web app service URL - should match BEETCODE_SERVICE_URL in web app's .env.local
-  serviceUrl: 'http://localhost:3001', // TODO: Update for production
-
   // Dashboard URL - where the user will be redirected when clicking the logo
-  dashboardUrl: 'http://localhost:3000', // TODO: Update for production
+  // Configured via .env.config.js (see .env.config.template.js)
+  dashboardUrl: envConfig.dashboardUrl,
+
+  // Web app service URL - API endpoint for tracking problems
+  // Configured via .env.config.js (see .env.config.template.js)
+  serviceUrl: envConfig.serviceUrl,
 
   // Supabase configuration (for auth only)
   supabase: {

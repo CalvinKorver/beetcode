@@ -117,12 +117,14 @@ h3 {
   overflow-y: auto;
 }
 
+#completed-section,
 #in-progress-section,
 #attempted-section,
 #suggested-section {
   margin-bottom: 20px;
 }
 
+#completed-section:last-child,
 #in-progress-section:last-child,
 #attempted-section:last-child,
 #suggested-section:last-child {
@@ -327,4 +329,17 @@ h3 {
 
 .dropdown-item:hover {
   background-color: #f9fafb;
+}
+
+.score-badge {
+  background-color: #f3f4f6;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
 }

@@ -94,9 +94,16 @@ No build process - load directly in Chrome:
 3. Click "Load unpacked"
 4. Select `beetcode-tracker/` folder
 
-**Configuration** (`config.js`):
+**Environment Configuration** (`.env.config.js`):
+- Copy `.env.config.template.js` to `.env.config.js` in `beetcode-tracker/`
+- Update `dashboardUrl` - Where the logo click redirects (default: `http://localhost:3000`)
+- Update `serviceUrl` - Backend API endpoint (default: `http://localhost:3001`)
+- For production, use your deployed domain for both URLs
+- Examples: See `.env.config.local.js` and `.env.config.prod.js`
+- Note: `.env.config.js` is gitignored
+
+**Supabase Configuration** (`config.js`):
 - Update `supabase.publishableKey` with your Supabase anon key
-- Update `serviceUrl` to point to your backend API (default: `http://localhost:3001`)
 
 **OAuth Setup Required**: See `beetcode-tracker/QUICK_START.md` for Google OAuth configuration
 
