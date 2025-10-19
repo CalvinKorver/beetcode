@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "BeetCode Problem Tracker",
+  "name": "BeetCode - Problem Tracker",
   "version": "1.0.0",
-  "description": "Track completed LeetCode problems automatically",
+  "description": "The better way to Leetcode. Automatically track coding problems and generate detailed reports.",
   
   "permissions": [
     "storage",
