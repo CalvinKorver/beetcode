@@ -31,7 +31,7 @@ export default function Home() {
       {/* Hero Section */}
       <section className="px-4 py-20 bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-950/20 dark:to-red-950/20 min-h-[85vh] flex items-center">
         <div className="max-w-6xl mx-auto text-center w-full">
-          <h1 className="text-4xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent leading-tight md:leading-[1.5] md:py-2">
+          <h1 className="text-4xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent leading-tight md:leading-[1.3] md:py-2">
             Level up your LeetCode with
             <br />Smart Progress Tracking
           </h1>
