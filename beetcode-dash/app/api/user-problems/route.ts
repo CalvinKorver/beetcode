@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createServerClient } from '@supabase/ssr';
-import { problemsService, ExtensionProblemData } from '@/lib/services/problemsService';
+import { problemsService } from '@/lib/services/problemsService';
 
 // Handle CORS preflight requests
 export async function OPTIONS() {
@@ -16,9 +16,9 @@ export async function OPTIONS() {
   });
 }
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   try {
-    console.log('API /problems/sync - POST request received');
+    console.log('API /user-problems - GET request received');
 
     // Extract token from Authorization header if present
     const authHeader = request.headers.get('authorization');
@@ -74,44 +74,37 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Parse request body
-    const extensionData: ExtensionProblemData = await request.json();
+    // Parse query parameters
+    const { searchParams } = new URL(request.url);
+    const statusFilter = searchParams.get('status') as 'Attempted' | 'Completed' | null;
+    const limit = searchParams.get('limit') ? parseInt(searchParams.get('limit')!) : undefined;
+    const offset = searchParams.get('offset') ? parseInt(searchParams.get('offset')!) : undefined;
 
-    // Validate required fields
-    if (!extensionData.id || !extensionData.status) {
-      return NextResponse.json(
-        { error: 'Missing required fields: id and status' },
-        {
-          status: 400,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          },
-        }
-      );
+    // Get all problems for user
+    const problems = await problemsService.getProblemsForUser(supabase);
+
+    // Apply filters
+    let filteredProblems = problems;
+
+    if (statusFilter) {
+      filteredProblems = filteredProblems.filter(p => p.status === statusFilter);
     }
 
-    // Sync the problem using the authenticated supabase client
-    const syncedProblem = await problemsService.syncFromExtension(extensionData, supabase);
-
-    if (!syncedProblem) {
-      return NextResponse.json(
-        { error: 'Failed to sync problem' },
-        {
-          status: 500,
-          headers: {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-          },
-        }
-      );
+    // Apply pagination
+    if (offset !== undefined) {
+      filteredProblems = filteredProblems.slice(offset);
     }
+    if (limit !== undefined) {
+      filteredProblems = filteredProblems.slice(0, limit);
+    }
+
+    // Calculate stats
+    const stats = problemsService.calculateStats(problems);
 
     return NextResponse.json({
       success: true,
-      problem: syncedProblem
+      problems: filteredProblems,
+      stats: stats,
     }, {
       headers: {
         'Access-Control-Allow-Origin': '*',
@@ -121,7 +114,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Error in /api/problems/sync:', error);
+    console.error('Error in /api/user-problems:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       {

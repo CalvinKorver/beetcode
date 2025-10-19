@@ -96,9 +96,45 @@ export const supabase = {
       }
     },
 
+    async refreshSession({ refresh_token }) {
+      try {
+        console.log('Refreshing session with refresh_token...')
+
+        const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
+          method: 'POST',
+          headers: {
+            'apikey': supabasePublishableKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ refresh_token })
+        })
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('Token refresh failed:', errorText)
+          throw new Error(`HTTP ${response.status}: ${errorText}`)
+        }
+
+        const data = await response.json()
+        console.log('Token refresh successful')
+
+        const session = {
+          access_token: data.access_token,
+          refresh_token: data.refresh_token,
+          user: data.user,
+          expires_at: Date.now() + (data.expires_in * 1000)
+        }
+
+        return { data: { session, user: data.user }, error: null }
+      } catch (error) {
+        console.error('refreshSession error:', error)
+        return { data: { session: null, user: null }, error }
+      }
+    },
+
     async getUser() {
       try {
-        const { session } = await getStoredSession()
+        const session = await getStoredSession()
         if (!session || !session.access_token) {
           return { data: { user: null }, error: null }
         }
