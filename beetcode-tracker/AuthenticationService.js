@@ -16,7 +16,7 @@ export class AuthenticationService {
       }
 
       console.log('AuthService: Validating token...');
-      const url = `${this.baseUrl}/api/problems/user`;
+      const url = `${this.baseUrl}/api/user-problems`;
       const response = await fetch(url, {
         method: 'HEAD', // Use HEAD for lightweight preflight check
         headers: {
@@ -65,15 +65,26 @@ export class AuthenticationService {
 
   // Get authentication headers for API calls
   async getAuthHeaders() {
+    console.log('=== AuthService: getAuthHeaders START ===');
+
     const session = await this.getValidSession();
+    console.log('Session retrieved:', session ? 'Present' : 'Null');
+
     if (!session) {
+      console.error('No valid session available');
       throw new Error('Not authenticated - please sign in');
     }
 
-    return {
+    console.log('Access token present:', !!session.access_token);
+    console.log('Access token prefix:', session.access_token?.substring(0, 20) + '...');
+
+    const headers = {
       'Authorization': `Bearer ${session.access_token}`,
       'Content-Type': 'application/json'
     };
+
+    console.log('=== AuthService: getAuthHeaders END ===');
+    return headers;
   }
 }
 

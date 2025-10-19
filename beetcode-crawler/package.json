@@ -1,0 +1,34 @@
+{
+  "name": "beetcode-crawler",
+  "version": "1.0.0",
+  "description": "LeetCode problem crawler for Beetcode",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc && node dist/index.js",
+    "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui"
+  },
+  "keywords": [
+    "leetcode",
+    "crawler",
+    "beetcode"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.48.1",
+    "dotenv": "^16.4.7",
+    "puppeteer": "^23.11.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@vitest/ui": "^3.2.4",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

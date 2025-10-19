@@ -1,15 +1,19 @@
 import { createClient } from "@/utils/supabase/server";
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 export interface Problem {
   id: string;
+  user_id: string;
+  problem_slug: string;
   problem_name: string;
+  leetcode_id: number | null;
   difficulty: "Easy" | "Medium" | "Hard";
+  problem_url: string;
   status: "Attempted" | "Completed";
   best_time_seconds: number | null;
   score: number;
   last_attempted_at: string;
   first_completed_at: string | null;
-  leetcode_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -98,9 +102,9 @@ export class ProblemsService {
   }
 
   /**
-   * Get all problems for the authenticated user
+   * Get all problems for the authenticated user with joined metadata
    */
-  async getProblemsForUser(supabaseClient?: any): Promise<Problem[]> {
+  async getProblemsForUser(supabaseClient?: SupabaseClient): Promise<Problem[]> {
     try {
       const supabase = supabaseClient || await this.getSupabaseClient();
 
@@ -117,9 +121,9 @@ export class ProblemsService {
         return [];
       }
 
-      // Fetch problems for the user
+      // Use the view to get problems with metadata
       const { data: problems, error: problemsError } = await supabase
-        .from('problems')
+        .from('user_problems_with_metadata')
         .select('*')
         .eq('user_id', user.id)
         .order('last_attempted_at', { ascending: false });
@@ -148,53 +152,20 @@ export class ProblemsService {
   }
 
   /**
-   * Add a new problem for the authenticated user
-   */
-  async addProblem(problemData: Omit<Problem, 'id' | 'created_at' | 'updated_at' | 'score'> & { score?: number }): Promise<Problem | null> {
-    try {
-      const supabase = await this.getSupabaseClient();
-
-      // Get the current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        console.error('Error getting user or no user found:', userError);
-        return null;
-      }
-
-      const { data, error } = await supabase
-        .from('problems')
-        .insert([{
-          ...problemData,
-          score: problemData.score ?? 5,
-          user_id: user.id
-        }])
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Error adding problem:', error);
-        return null;
-      }
-
-      return data;
-    } catch (error) {
-      console.error('Unexpected error in addProblem:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Update an existing problem
+   * Update an existing user problem
    */
   async updateProblem(problemId: string, updates: Partial<Problem>): Promise<Problem | null> {
     try {
       const supabase = await this.getSupabaseClient();
 
       const { data, error } = await supabase
-        .from('problems')
+        .from('user_problems')
         .update({
-          ...updates,
+          status: updates.status,
+          best_time_seconds: updates.best_time_seconds,
+          score: updates.score,
+          first_completed_at: updates.first_completed_at,
+          last_attempted_at: updates.last_attempted_at,
           updated_at: new Date().toISOString()
         })
         .eq('id', problemId)
@@ -206,9 +177,35 @@ export class ProblemsService {
         return null;
       }
 
-      return data;
+      // Return with joined metadata
+      return await this.getProblemById(data.id);
     } catch (error) {
       console.error('Unexpected error in updateProblem:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get a single problem by ID with metadata
+   */
+  async getProblemById(problemId: string, supabaseClient?: SupabaseClient): Promise<Problem | null> {
+    try {
+      const supabase = supabaseClient || await this.getSupabaseClient();
+
+      const { data, error } = await supabase
+        .from('user_problems_with_metadata')
+        .select('*')
+        .eq('id', problemId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching problem:', error);
+        return null;
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Unexpected error in getProblemById:', error);
       return null;
     }
   }
@@ -221,7 +218,7 @@ export class ProblemsService {
       const supabase = await this.getSupabaseClient();
 
       const { error } = await supabase
-        .from('problems')
+        .from('user_problems')
         .delete()
         .eq('id', problemId);
 
@@ -238,18 +235,16 @@ export class ProblemsService {
   }
 
   /**
-   * Upsert a problem (insert if new, update if exists with conflict resolution)
+   * Track a problem - creates or returns existing user_problem record
+   * Returns the user_problem UUID and problem metadata for caching
+   * Per API Design: This leverages existing crawler data
    */
-  async upsertProblem(problemData: {
-    problem_name: string;
-    leetcode_id?: number | null;
-    difficulty?: "Easy" | "Medium" | "Hard" | null;
-    status: "Attempted" | "Completed";
-    best_time_seconds?: number | null;
-    score?: number;
-    first_completed_at?: string | null;
-    last_attempted_at?: string;
-  }, supabaseClient?: any): Promise<Problem | null> {
+  async trackProblem(
+    problemSlug: string,
+    status: "Attempted" | "Completed" = "Attempted",
+    timeSeconds?: number | null,
+    supabaseClient?: SupabaseClient
+  ): Promise<{ userProblemId: string; metadata: { problem_name: string; difficulty: string; leetcode_id: number | null; problem_url: string; tags: string[] | null } } | null> {
     try {
       const supabase = supabaseClient || await this.getSupabaseClient();
 
@@ -261,32 +256,175 @@ export class ProblemsService {
         return null;
       }
 
-      // First, try to find existing problem by leetcode_id or problem_name
-      let existingProblem = null;
+      console.log(`Tracking problem for user ${user.id}: ${problemSlug} with status ${status} and time ${timeSeconds}`);
 
-      if (problemData.leetcode_id) {
-        const { data } = await supabase
-          .from('problems')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('leetcode_id', problemData.leetcode_id)
-          .single();
-        existingProblem = data;
+      // Verify problem exists in leetcode_problems table
+      const { data: leetcodeProblem, error: problemError } = await supabase
+        .from('leetcode_problems')
+        .select('problem_slug, problem_name, difficulty, leetcode_id, problem_url, tags')
+        .eq('problem_slug', problemSlug)
+        .single();
+
+      if (problemError || !leetcodeProblem) {
+        console.error('Problem not found in leetcode_problems table:', problemSlug, problemError);
+        throw new Error('Problem not found in database. Please ensure the crawler has indexed this problem.');
       }
 
-      // If not found by leetcode_id, try by problem_name
-      if (!existingProblem) {
-        const { data } = await supabase
-          .from('problems')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('problem_name', problemData.problem_name)
-          .single();
-        existingProblem = data;
+      // Check if user_problem already exists
+      const { data: existingUserProblem } = await supabase
+        .from('user_problems')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('problem_slug', problemSlug)
+        .single();
+
+      if (existingUserProblem) {
+        // Return existing UUID (idempotent)
+        return {
+          userProblemId: existingUserProblem.id,
+          metadata: {
+            problem_name: leetcodeProblem.problem_name,
+            difficulty: leetcodeProblem.difficulty,
+            leetcode_id: leetcodeProblem.leetcode_id,
+            problem_url: leetcodeProblem.problem_url,
+            tags: leetcodeProblem.tags || null,
+          }
+        };
       }
+
+      // Create new user_problem record
+      const { data: newUserProblem, error: insertError } = await supabase
+        .from('user_problems')
+        .insert([{
+          user_id: user.id,
+          problem_slug: problemSlug,
+          status: status,
+          best_time_seconds: timeSeconds || null,
+          last_attempted_at: new Date().toISOString(),
+          first_completed_at: status === 'Completed' ? new Date().toISOString() : null,
+        }])
+        .select('id')
+        .single();
+
+      if (insertError || !newUserProblem) {
+        console.error('Error creating user_problem:', insertError);
+        return null;
+      }
+
+      return {
+        userProblemId: newUserProblem.id,
+        metadata: {
+          problem_name: leetcodeProblem.problem_name,
+          difficulty: leetcodeProblem.difficulty,
+          leetcode_id: leetcodeProblem.leetcode_id,
+          problem_url: leetcodeProblem.problem_url,
+          tags: leetcodeProblem.tags || null,
+        }
+      };
+    } catch (error) {
+      console.error('Unexpected error in trackProblem:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Ensure a LeetCode problem exists in the global table
+   * This is called before creating a user_problem entry
+   */
+  private async ensureLeetCodeProblem(
+    problemSlug: string,
+    problemData: {
+      leetcode_id?: number | null;
+      problem_name?: string;
+      difficulty?: "Easy" | "Medium" | "Hard" | null;
+    },
+    supabaseClient: SupabaseClient
+  ): Promise<void> {
+    // Check if problem exists in leetcode_problems
+    const { data: existing } = await supabaseClient
+      .from('leetcode_problems')
+      .select('problem_slug')
+      .eq('problem_slug', problemSlug)
+      .single();
+
+    if (!existing) {
+      // Insert into leetcode_problems if it doesn't exist
+      const { error } = await supabaseClient
+        .from('leetcode_problems')
+        .insert({
+          problem_slug: problemSlug,
+          leetcode_id: problemData.leetcode_id || null,
+          problem_name: problemData.problem_name || problemSlug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+          difficulty: problemData.difficulty || 'Medium', // Default to Medium if unknown
+          problem_url: `https://leetcode.com/problems/${problemSlug}/`,
+        });
+
+      if (error) {
+        console.warn('Could not insert into leetcode_problems (may already exist):', error.message);
+      }
+    } else if (problemData.leetcode_id || problemData.difficulty || problemData.problem_name) {
+      // Update existing record with any new data
+      const updates: Record<string, string | number> = {
+        updated_at: new Date().toISOString()
+      };
+
+      if (problemData.leetcode_id) updates.leetcode_id = problemData.leetcode_id;
+      if (problemData.problem_name) updates.problem_name = problemData.problem_name;
+      if (problemData.difficulty) updates.difficulty = problemData.difficulty;
+
+      await supabaseClient
+        .from('leetcode_problems')
+        .update(updates)
+        .eq('problem_slug', problemSlug);
+    }
+  }
+
+  /**
+   * Upsert a problem (insert if new, update if exists with conflict resolution)
+   */
+  async upsertProblem(problemData: {
+    problem_slug: string;
+    problem_name?: string;
+    leetcode_id?: number | null;
+    difficulty?: "Easy" | "Medium" | "Hard" | null;
+    status: "Attempted" | "Completed";
+    best_time_seconds?: number | null;
+    score?: number;
+    first_completed_at?: string | null;
+    last_attempted_at?: string;
+  }, supabaseClient?: SupabaseClient): Promise<Problem | null> {
+    try {
+      const supabase = supabaseClient || await this.getSupabaseClient();
+
+      // Get the current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        console.error('Error getting user or no user found:', userError);
+        return null;
+      }
+
+      // Ensure the LeetCode problem exists in global table
+      await this.ensureLeetCodeProblem(
+        problemData.problem_slug,
+        {
+          leetcode_id: problemData.leetcode_id,
+          problem_name: problemData.problem_name,
+          difficulty: problemData.difficulty,
+        },
+        supabase
+      );
+
+      // Check if user_problem already exists
+      const { data: existingProblem } = await supabase
+        .from('user_problems')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('problem_slug', problemData.problem_slug)
+        .single();
 
       if (existingProblem) {
-        // Update existing problem with conflict resolution
+        // Update existing user_problem with conflict resolution
         const updates: Record<string, string | number | null> = {
           updated_at: new Date().toISOString(),
           last_attempted_at: problemData.last_attempted_at || new Date().toISOString(),
@@ -309,48 +447,43 @@ export class ProblemsService {
           updates.score = problemData.score;
         }
 
-        // Update other fields if they're missing
-        if (!existingProblem.leetcode_id && problemData.leetcode_id) {
-          updates.leetcode_id = problemData.leetcode_id;
-        }
-        if (!existingProblem.difficulty && problemData.difficulty) {
-          updates.difficulty = problemData.difficulty;
-        }
-
         const { data, error } = await supabase
-          .from('problems')
+          .from('user_problems')
           .update(updates)
           .eq('id', existingProblem.id)
           .select()
           .single();
 
         if (error) {
-          console.error('Error updating problem:', error);
+          console.error('Error updating user_problem:', error);
           return null;
         }
 
-        return data;
+        // Return with joined metadata
+        return await this.getProblemById(data.id, supabase);
       } else {
-        // Insert new problem
+        // Insert new user_problem
         const { data, error } = await supabase
-          .from('problems')
+          .from('user_problems')
           .insert([{
-            ...problemData,
-            score: problemData.score ?? 5,
             user_id: user.id,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            problem_slug: problemData.problem_slug,
+            status: problemData.status,
+            best_time_seconds: problemData.best_time_seconds || null,
+            score: problemData.score ?? 5,
+            first_completed_at: problemData.first_completed_at || null,
             last_attempted_at: problemData.last_attempted_at || new Date().toISOString(),
           }])
           .select()
           .single();
 
         if (error) {
-          console.error('Error inserting problem:', error);
+          console.error('Error inserting user_problem:', error);
           return null;
         }
 
-        return data;
+        // Return with joined metadata
+        return await this.getProblemById(data.id, supabase);
       }
     } catch (error) {
       console.error('Unexpected error in upsertProblem:', error);
@@ -361,13 +494,14 @@ export class ProblemsService {
   /**
    * Sync problem data from extension format
    */
-  async syncFromExtension(extensionData: ExtensionProblemData, supabaseClient?: any): Promise<Problem | null> {
+  async syncFromExtension(extensionData: ExtensionProblemData, supabaseClient?: SupabaseClient): Promise<Problem | null> {
     try {
       const bestTimeSeconds = extensionData.bestTime ? this.timeToSeconds(extensionData.bestTime) : null;
       const status = this.normalizeStatus(extensionData.status);
       const difficulty = this.normalizeDifficulty(extensionData.difficulty);
 
       const problemData = {
+        problem_slug: extensionData.id, // The ID from extension is the slug
         problem_name: extensionData.name || extensionData.id.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
         leetcode_id: extensionData.leetcodeId || null,
         difficulty,

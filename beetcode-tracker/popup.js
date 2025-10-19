@@ -1,18 +1,87 @@
 // Import clients
 import { supabase, getStoredSession, clearStoredSession } from './supabase-client.js';
-import { beetcodeService } from './BeetcodeServiceClient.js';
+import { backendClient } from './BackendClient.js';
+import { config } from './config.js';
+
+// Hardcoded suggested problems
+const SUGGESTED_PROBLEMS = [
+  {
+    id: 'two-sum',
+    leetcodeId: '1',
+    name: 'Two Sum',
+    difficulty: 'easy',
+    url: 'https://leetcode.com/problems/two-sum/'
+  },
+  {
+    id: 'add-two-numbers',
+    leetcodeId: '2',
+    name: 'Add Two Numbers',
+    difficulty: 'medium',
+    url: 'https://leetcode.com/problems/add-two-numbers/'
+  }
+];
 
 function convertDurationToMinutes(duration) {
   if (!duration || typeof duration !== 'string') return 0;
-  
+
   const parts = duration.split(':');
   if (parts.length !== 3) return 0;
-  
+
   const hours = parseInt(parts[0], 10) || 0;
   const minutes = parseInt(parts[1], 10) || 0;
   const seconds = parseInt(parts[2], 10) || 0;
-  
+
   return hours * 60 + minutes + Math.round(seconds / 60);
+}
+
+/**
+ * Calculate problem score using the same algorithm as the dashboard
+ * @param {Object} problem - Problem object with best_time_seconds, score, last_attempted_at
+ * @returns {number} Calculated score
+ */
+function calculateProblemScore(problem) {
+  const now = new Date();
+  const lastAttempted = new Date(problem.last_attempted_at);
+
+  // Calculate C_Date
+  const daysSinceLastAttempted = Math.floor((now.getTime() - lastAttempted.getTime()) / (1000 * 60 * 60 * 24));
+  const minutesSinceLastAttempted = Math.floor((now.getTime() - lastAttempted.getTime()) / (1000 * 60));
+
+  const cDate = daysSinceLastAttempted < 4 ? 1 : minutesSinceLastAttempted;
+
+  // Calculate C_Time
+  const timeMinutes = problem.best_time_seconds ? problem.best_time_seconds / 60 : 0;
+  let cTime = 0;
+
+  if (timeMinutes < 25) {
+    cTime = timeMinutes * 100;
+  } else if (timeMinutes < 35) {
+    cTime = timeMinutes * 200;
+  } else if (timeMinutes < 45) {
+    cTime = timeMinutes * 300;
+  } else {
+    cTime = timeMinutes * 400;
+  }
+
+  // Calculate C_Solution
+  const cSolution = problem.score === 5 ? 0.5 : (5 - problem.score) + 1;
+
+  // Final formula: round((C_Date + C_Time) * C_Solution)
+  return Math.round((cDate + cTime) * cSolution);
+}
+
+/**
+ * Fetch completed problems from backend API
+ * @returns {Promise<Array>} Array of completed problems with metadata
+ */
+async function fetchCompletedProblems() {
+  try {
+    const result = await backendClient.getProblems({ status: 'Completed' });
+    return result.problems || [];
+  } catch (error) {
+    console.error('Error fetching completed problems:', error);
+    return [];
+  }
 }
 
 function getDifficultyStyle(difficulty) {
@@ -28,50 +97,38 @@ function getDifficultyStyle(difficulty) {
   }
 }
 
-function getShortestTimeDisplay(timeEntries) {
-  if (!timeEntries || timeEntries.length === 0) return '';
-  
-  const shortestEntry = timeEntries
-    .map(entry => ({
-      ...entry,
-      totalMinutes: convertDurationToMinutes(entry.duration)
-    }))
-    .sort((a, b) => a.totalMinutes - b.totalMinutes)[0];
-  
-  // Convert hh:mm:ss to mm:ss format
-  const parts = shortestEntry.duration.split(':');
-  const hours = parseInt(parts[0], 10) || 0;
-  const minutes = parseInt(parts[1], 10) || 0;
-  const seconds = parts[2] || '00';
-  
-  const totalMinutes = hours * 60 + minutes;
-  const displayTime = `${totalMinutes}:${seconds}`;
-  
-  return `Best: <strong>${displayTime}</strong> ✓`;
-}
-
 async function checkAuthState() {
   try {
-    const session = await getStoredSession();
+    // Refresh session if we have a refresh token
+    let session = await getStoredSession();
+    if (session?.refresh_token) {
+      console.log('Refreshing session...');
+      const { data, error } = await supabase.auth.refreshSession({
+        refresh_token: session.refresh_token
+      });
+
+      if (error) {
+        console.error('Failed to refresh session:', error);
+        await clearStoredSession();
+        session = null;
+      } else if (data.session) {
+        console.log('Session refreshed successfully');
+        session = data.session;
+        // Session will be stored by onAuthStateChange handler
+      }
+    }
+
     const googleSigninBtn = document.getElementById('google-signin-btn');
 
     if (session) {
-      // User is signed in
-      console.log('User is signed in:', session.user);
-
-      // Update button to show signed-in state
-      googleSigninBtn.textContent = `✓ Signed in as ${session.user.email}`;
-      googleSigninBtn.style.backgroundColor = '#28a745'; // Green
-      googleSigninBtn.style.cursor = 'pointer';
-
-      // Change click handler to logout
+      // User is signed in - update dropdown item to show sign out option
+      googleSigninBtn.textContent = `Sign out (${session.user.email})`;
       googleSigninBtn.onclick = async () => {
         try {
           console.log('Starting sign out process...');
 
           // Show loading state
           googleSigninBtn.textContent = 'Signing out...';
-          googleSigninBtn.style.backgroundColor = '#ffc107'; // Orange for loading
 
           // Perform sign out with enhanced cleanup
           const { error } = await supabase.auth.signOut();
@@ -94,6 +151,8 @@ async function checkAuthState() {
           alert('Failed to sign out: ' + error.message);
           await checkAuthState(); // Reset UI even on error
         }
+        // Close settings dropdown
+        document.getElementById('settings-dropdown').classList.remove('show');
       };
 
     } else {
@@ -102,8 +161,6 @@ async function checkAuthState() {
 
       // Reset button to sign-in state
       googleSigninBtn.textContent = 'Sign in with Google';
-      googleSigninBtn.style.backgroundColor = '#4285f4'; // Google blue
-      googleSigninBtn.style.cursor = 'pointer';
 
       // Set click handler to sign in
       googleSigninBtn.onclick = async () => {
@@ -115,6 +172,8 @@ async function checkAuthState() {
           console.error('Google sign-in failed:', error);
           alert('Failed to sign in with Google: ' + error.message);
         }
+        // Close settings dropdown
+        document.getElementById('settings-dropdown').classList.remove('show');
       };
     }
   } catch (error) {
@@ -125,7 +184,24 @@ async function checkAuthState() {
 document.addEventListener('DOMContentLoaded', async () => {
   await checkAuthState();
   await loadProblems();
-  
+
+  // Add logo click listener to open dashboard
+  const logoIcon = document.querySelector('.logo-icon');
+  if (logoIcon) {
+    logoIcon.style.cursor = 'pointer';
+    logoIcon.addEventListener('click', () => {
+      chrome.tabs.create({ url: config.dashboardUrl });
+    });
+  }
+
+  // Add close button listener
+  const closeBtn = document.getElementById('close-btn');
+  if (closeBtn) {
+    closeBtn.addEventListener('click', () => {
+      window.close();
+    });
+  }
+
   // Add settings dropdown toggle listener
   const settingsBtn = document.getElementById('settings-btn');
   const settingsDropdown = document.getElementById('settings-dropdown');
@@ -154,7 +230,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   testApiBtn.addEventListener('click', async () => {
     try {
       console.log('Test API button clicked');
-      const result = await beetcodeService.testConnection();
+      const result = await backendClient.testConnection();
 
       if (result.success) {
         alert(`API test successful!\n${result.message}\nCheck console for details.`);
@@ -188,8 +264,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           type: 'TRACK_PROBLEM'
         }, (response) => {
           if (chrome.runtime.lastError) {
-            console.error('Runtime error:', chrome.runtime.lastError);
-            alert('Error: ' + chrome.runtime.lastError.message);
+            console.error('Runtime error details:', {
+              message: chrome.runtime.lastError.message,
+              error: chrome.runtime.lastError
+            });
+            alert('Error: ' + (chrome.runtime.lastError.message || 'Could not communicate with content script. Please refresh the LeetCode page and try again.'));
           } else if (response && response.success) {
             console.log('Problem tracking started successfully');
             // Reload problems to show updated display
@@ -205,10 +284,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (error) {
       console.error('Error sending track message to content script:', error);
+      alert('Error: ' + error.message);
     }
   });
 
-  // Google Sign-in button listener is now handled by checkAuthState()
 
   // Listen for storage changes (when auth completes in background)
   chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -236,14 +315,19 @@ async function loginWithGoogle() {
 
 async function loadProblems() {
   try {
+    // Load local problems (in-progress and attempted)
     const result = await chrome.storage.local.get(['problems']);
-    const problems = result.problems || {};
-    
+    const localProblems = result.problems || {};
+
     console.log('Raw storage result:', result);
-    console.log('Problems from storage:', problems);
-    console.log('Problems keys:', Object.keys(problems));
-    
-    displayProblems(problems);
+    console.log('Problems from storage:', localProblems);
+    console.log('Problems keys:', Object.keys(localProblems));
+
+    // Fetch completed problems from backend
+    const completedProblems = await fetchCompletedProblems();
+    console.log('Completed problems from backend:', completedProblems);
+
+    displayProblems(localProblems, completedProblems);
   } catch (error) {
     console.error('Error loading problems:', error);
   }
@@ -253,96 +337,124 @@ function getActiveProblems(problemsArray, status) {
   return problemsArray.filter(p => p && p.status === status && !p.isDeleted);
 }
 
-function displayProblems(problems) {
-  const problemsList = document.getElementById('problems-list');
+function displayProblems(localProblems, completedProblems = []) {
   const emptyState = document.getElementById('empty-state');
-  
-  const problemsArray = Object.values(problems);
-  console.log('All problems:', problemsArray);
-  
-  const inProgressProblems = getActiveProblems(problemsArray, 'TRACKING');
-  const completedProblems = getActiveProblems(problemsArray, 'COMPLETED');
-  const attemptedProblems = getActiveProblems(problemsArray, 'ATTEMPTED');
-  
-  console.log('In-progress problems:', inProgressProblems);
+
+  const problemsArray = Object.values(localProblems);
+  console.log('All local problems:', problemsArray);
   console.log('Completed problems:', completedProblems);
+
+  const inProgressProblems = getActiveProblems(problemsArray, 'TRACKING');
+  const attemptedProblems = getActiveProblems(problemsArray, 'ATTEMPTED');
+
+  console.log('In-progress problems:', inProgressProblems);
   console.log('Attempted problems:', attemptedProblems);
-  
+
+  // Sort completed problems by calculated score (highest first)
+  const sortedCompletedProblems = completedProblems
+    .map(problem => ({
+      ...problem,
+      calculatedScore: calculateProblemScore(problem)
+    }))
+    .sort((a, b) => b.calculatedScore - a.calculatedScore);
+
+  console.log('Sorted completed problems:', sortedCompletedProblems);
+
+  // Filter suggested problems - exclude any that are already tracked or attempted
+  const trackedProblemIds = problemsArray
+    .filter(p => !p.isDeleted)
+    .map(p => p.id);
+  const suggestedProblems = SUGGESTED_PROBLEMS.filter(
+    problem => !trackedProblemIds.includes(problem.id)
+  );
+
+  console.log('Suggested problems:', suggestedProblems);
+  console.log('Tracked problem IDs:', trackedProblemIds);
+
+  const completedSection = document.getElementById('completed-section');
   const inProgressSection = document.getElementById('in-progress-section');
   const attemptedSection = document.getElementById('attempted-section');
-  const completedSection = document.getElementById('completed-section');
+  const suggestedSection = document.getElementById('suggested-section');
+  const completedList = document.getElementById('completed-list');
   const inProgressList = document.getElementById('in-progress-list');
   const attemptedList = document.getElementById('attempted-list');
-  const completedList = document.getElementById('completed-list');
-  
-  if (problemsArray.length === 0) {
+  const suggestedList = document.getElementById('suggested-list');
+
+  const hasAnyProblems = problemsArray.length > 0 || completedProblems.length > 0;
+
+  if (!hasAnyProblems) {
     emptyState.style.display = 'block';
+    completedSection.style.display = 'none';
     inProgressSection.style.display = 'none';
     attemptedSection.style.display = 'none';
-    completedSection.style.display = 'none';
-    return;
+    // Still show suggested even if no problems tracked yet
+    suggestedSection.style.display = suggestedProblems.length > 0 ? 'block' : 'none';
+  } else {
+    emptyState.style.display = 'none';
+
+    // Show/hide sections based on content
+    completedSection.style.display = sortedCompletedProblems.length > 0 ? 'block' : 'none';
+    inProgressSection.style.display = inProgressProblems.length > 0 ? 'block' : 'none';
+    attemptedSection.style.display = attemptedProblems.length > 0 ? 'block' : 'none';
+    suggestedSection.style.display = suggestedProblems.length > 0 ? 'block' : 'none';
   }
-  
-  emptyState.style.display = 'none';
-  
-  // Show/hide sections based on content
-  inProgressSection.style.display = inProgressProblems.length > 0 ? 'block' : 'none';
-  attemptedSection.style.display = attemptedProblems.length > 0 ? 'block' : 'none';
-  completedSection.style.display = completedProblems.length > 0 ? 'block' : 'none';
-  
+
+  // Populate completed problems
+  completedList.innerHTML = sortedCompletedProblems
+    .map(problem => `
+      <div class="problem-item completed">
+        <div class="problem-header">
+          <div class="problem-name">
+            ${problem.leetcode_id ? `${problem.leetcode_id}. ` : ''}${problem.problem_name}
+            ${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty.toLowerCase()}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty.toLowerCase())}">${problem.difficulty}</span>` : ''}
+          </div>
+          <div class="problem-actions">
+            <span class="score-badge">${problem.calculatedScore}</span>
+            <a href="${problem.problem_url || `https://leetcode.com/problems/${problem.problem_slug}/`}" target="_blank" class="problem-link" title="View problem on LeetCode"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a>
+          </div>
+        </div>
+      </div>
+    `).join('');
+
   // Populate in-progress problems
   inProgressList.innerHTML = inProgressProblems
     .sort((a, b) => b.lastAttempted - a.lastAttempted)
     .map(problem => `
       <div class="problem-item tracking">
         <div class="problem-header">
-          <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
+          <div class="problem-name">${problem.leetcodeId ? `${problem.leetcodeId}. ` : ''}${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
           <div class="problem-actions">
-            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><img src="icons/beetcode-32.png" style="height: 16px;" alt="View problem"></a>
+            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a>
             <button class="remove-button" data-problem-id="${problem.id}" title="Stop tracking problem">×</button>
           </div>
         </div>
-        <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
-          <span class="attempts-count">${problem.timeEntries ? problem.timeEntries.length : 0} attempts</span>
-          <span class="shortest-time">${getShortestTimeDisplay(problem.timeEntries) || ''}</span>
-        </div>
       </div>
     `).join('');
-  
+
   // Populate attempted problems
   attemptedList.innerHTML = attemptedProblems
     .sort((a, b) => b.lastAttempted - a.lastAttempted)
     .map(problem => `
       <div class="problem-item ${problem.status ? problem.status.toLowerCase() : 'unknown'}">
         <div class="problem-header">
-          <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
+          <div class="problem-name">${problem.leetcodeId ? `${problem.leetcodeId}. ` : ''}${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
           <div class="problem-actions">
-            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><img src="icons/beetcode-32.png" style="height: 16px;" alt="View problem"></a>
+            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a>
             <button class="remove-button" data-problem-id="${problem.id}" title="Remove problem">×</button>
           </div>
-        </div>
-        <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
-          <span class="attempts-count">${problem.timeEntries ? problem.timeEntries.length : 0} attempts</span>
-          <span class="shortest-time">${getShortestTimeDisplay(problem.timeEntries) || ''}</span>
         </div>
       </div>
     `).join('');
-  
-  // Populate completed problems
-  completedList.innerHTML = completedProblems
-    .sort((a, b) => b.lastAttempted - a.lastAttempted)
+
+  // Populate suggested problems (filtered to exclude tracked ones)
+  suggestedList.innerHTML = suggestedProblems
     .map(problem => `
-      <div class="problem-item ${problem.status ? problem.status.toLowerCase() : 'unknown'}">
+      <div class="problem-item suggested">
         <div class="problem-header">
-          <div class="problem-name">${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
+          <div class="problem-name">${problem.leetcodeId ? `${problem.leetcodeId}. ` : ''}${problem.name}${problem.difficulty ? ` <span class="difficulty difficulty-${problem.difficulty}" style="font-size: 12px; padding: 2px 6px; border-radius: 12px; ${getDifficultyStyle(problem.difficulty)}">${problem.difficulty.charAt(0).toUpperCase() + problem.difficulty.slice(1)}</span>` : ''}</div>
           <div class="problem-actions">
-            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><img src="icons/beetcode-32.png" style="height: 16px;" alt="View problem"></a>
-            <button class="remove-button" data-problem-id="${problem.id}" title="Remove problem">×</button>
+            <a href="${problem.url}" target="_blank" class="problem-link" title="View problem on LeetCode"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a>
           </div>
-        </div>
-        <div class="problem-meta" style="display: flex; justify-content: space-between; align-items: center;">
-          <span class="attempts-count">${problem.timeEntries ? problem.timeEntries.length : 0} attempts</span>
-          <span class="shortest-time">${getShortestTimeDisplay(problem.timeEntries) || ''}</span>
         </div>
       </div>
     `).join('');

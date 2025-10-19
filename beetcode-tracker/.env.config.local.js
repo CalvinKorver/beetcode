@@ -1,0 +1,10 @@
+// Local development environment configuration
+// This file is an example - copy to `.env.config.js` and modify as needed
+
+export const envConfig = {
+  // Dashboard URL - where users go when clicking the logo
+  dashboardUrl: 'http://localhost:3000',
+
+  // Backend service URL - API endpoint for tracking problems
+  serviceUrl: 'http://localhost:3001'
+};

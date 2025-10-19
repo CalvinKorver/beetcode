@@ -1,0 +1,22 @@
+[
+  {
+    "name": "LEETCODE_SESSION",
+    "value": "your-session-token-here",
+    "domain": ".leetcode.com",
+    "path": "/",
+    "expires": 1735689600,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "csrftoken",
+    "value": "your-csrf-token-here",
+    "domain": ".leetcode.com",
+    "path": "/",
+    "expires": 1735689600,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  }
+]

@@ -166,7 +166,7 @@ export function ProblemsTable({ problems }: ProblemsTableProps) {
     }
 
     return [...problems].sort((a, b) => {
-      let aValue: any, bValue: any;
+      let aValue: string | number | null, bValue: string | number | null;
 
       // Handle calculated score field
       if (sortConfig.field === "calculatedScore") {
@@ -237,7 +237,7 @@ export function ProblemsTable({ problems }: ProblemsTableProps) {
                   Status
                 </SortableHeader>
                 <SortableHeader
-                  field="best_time_ms"
+                  field="best_time_seconds"
                   currentSort={sortConfig}
                   onSort={handleSort}
                 >
@@ -282,7 +282,10 @@ export function ProblemsTable({ problems }: ProblemsTableProps) {
                     {new Date(problem.last_attempted_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
-                    {calculateProblemScore(problem)}
+                    {(() => {
+                      const score = calculateProblemScore(problem);
+                      return isNaN(score) ? "N/A" : score.toString();
+                    })()}
                   </TableCell>
                 </TableRow>
               ))}

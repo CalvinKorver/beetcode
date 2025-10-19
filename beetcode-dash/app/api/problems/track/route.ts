@@ -1,9 +1,9 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createServerClient } from '@supabase/ssr';
 import { problemsService } from '@/lib/services/problemsService';
 
-// Handle CORS preflight requests - no authentication needed for OPTIONS
+// Handle CORS preflight requests
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 200,
@@ -11,20 +11,23 @@ export async function OPTIONS() {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Max-Age': '86400', // Cache preflight for 24 hours
+      'Access-Control-Max-Age': '86400',
     },
   });
 }
 
-export async function GET(request: Request) {
-  try {
-    console.log('API /problems/user - GET request received');
+interface TrackProblemRequest {
+  problemSlug: string; // LeetCode problem slug (e.g., "two-sum")
+  status?: 'Attempted' | 'Completed';
+  time?: number; // Time in milliseconds
+}
 
-    // Log the authorization header
-    const authHeader = request.headers.get('authorization');
-    console.log('Authorization header:', authHeader ? `${authHeader.substring(0, 20)}...` : 'missing');
+export async function POST(request: NextRequest) {
+  try {
+    console.log('API /problems/track - POST request received');
 
     // Extract token from Authorization header if present
+    const authHeader = request.headers.get('authorization');
     const token = authHeader?.replace('Bearer ', '');
 
     let supabase;
@@ -35,7 +38,6 @@ export async function GET(request: Request) {
       // Use token-based auth for extension requests
       console.log('Using token-based authentication');
 
-      // Create a supabase client with the token
       supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_OR_ANON_KEY!,
@@ -64,12 +66,6 @@ export async function GET(request: Request) {
       authError = error;
     }
 
-    console.log('Auth check result:', {
-      hasUser: !!user,
-      userId: user?.id,
-      authError: authError?.message
-    });
-
     if (authError || !user) {
       return NextResponse.json(
         { error: 'Unauthorized' },
@@ -84,14 +80,53 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get all problems for the user using the authenticated supabase client
-    const problems = await problemsService.getProblemsForUser(supabase);
-    const stats = problemsService.calculateStats(problems);
+    // Parse request body
+    const problemData: TrackProblemRequest = await request.json();
+
+    // Validate required fields
+    if (!problemData.problemSlug) {
+      return NextResponse.json(
+        { error: 'Missing required field: problemSlug' },
+        {
+          status: 400,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          },
+        }
+      );
+    }
+
+    // Convert time from milliseconds to seconds if provided
+    const timeSeconds = problemData.time ? Math.round(problemData.time / 1000) : null;
+
+    // Call service layer to track the problem
+    const result = await problemsService.trackProblem(
+      problemData.problemSlug,
+      problemData.status || 'Attempted',
+      timeSeconds,
+      supabase
+    );
+
+    if (!result) {
+      return NextResponse.json(
+        { error: 'Failed to track problem' },
+        {
+          status: 500,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          },
+        }
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      problems,
-      stats
+      userProblemId: result.userProblemId,
+      metadata: result.metadata,
     }, {
       headers: {
         'Access-Control-Allow-Origin': '*',
@@ -100,8 +135,24 @@ export async function GET(request: Request) {
       },
     });
 
-  } catch (error) {
-    console.error('Error in /api/problems/user:', error);
+  } catch (error: unknown) {
+    console.error('Error in /api/problems/track:', error);
+
+    // Check if it's a "problem not found" error (404)
+    if (error instanceof Error && error.message.includes('not found in database')) {
+      return NextResponse.json(
+        { error: 'Problem not found in database. The crawler may not have indexed this problem yet.' },
+        {
+          status: 404,
+          headers: {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          },
+        }
+      );
+    }
+
     return NextResponse.json(
       { error: 'Internal server error' },
       {
